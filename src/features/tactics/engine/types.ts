@@ -41,6 +41,8 @@ export type ShapeElement =
       w: number
       h: number
       rotation?: number
+      flipX?: boolean
+      flipY?: boolean
       label?: string
     })
   | (ElementBase & {
@@ -97,7 +99,13 @@ export type DragState =
       id: string
       start: Point
       origin?: Point
-      type: 'move' | 'resizeZone' | 'resizeGoal' | 'resizeLine' | 'resizePath' | 'draw'
+      type:
+        | 'move'
+        | 'resizeZone'
+        | 'resizeGoal'
+        | 'resizeLine'
+        | 'resizePath'
+        | 'draw'
       drawKind?: 'arrow' | 'line' | 'path' | 'zone' | 'goal'
       handle?:
         | 'from'

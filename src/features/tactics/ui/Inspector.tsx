@@ -3,6 +3,7 @@
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Separator } from '@/components/ui/separator'
+import { RotateCwSquare, RotateCcwSquare } from 'lucide-react'
 import { deleteElement } from '../engine/commands'
 import type { Scene, ShapeElement } from '../engine/types'
 
@@ -222,22 +223,69 @@ export function Inspector({
                     }
                   />
                 </div>
-                <div className="space-y-1">
-                  <div className="text-xs text-muted-foreground">Rotação (graus)</div>
-                  <Input
-                    type="number"
-                    value={selected.rotation ?? 0}
-                    onChange={(e) =>
-                      applyScene({
-                        ...scene,
-                        elements: scene.elements.map((el) =>
-                          el.id === selected.id
-                            ? ({ ...el, rotation: Number(e.target.value) } as any)
-                            : el,
-                        ),
-                      })
-                    }
-                  />
+                <div className="space-y-2">
+                  <div className="text-xs text-muted-foreground">Orientação</div>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        const currentRotation = selected.rotation ?? 0
+                        // Rotate 90 degrees counter-clockwise (left)
+                        const newRotation = (currentRotation - 90 + 360) % 360
+                        applyScene({
+                          ...scene,
+                          elements: scene.elements.map((el) =>
+                            el.id === selected.id
+                              ? ({ ...el, rotation: newRotation } as any)
+                              : el,
+                          ),
+                        })
+                      }}
+                      title="Rodar 90° para a esquerda"
+                    >
+                      <RotateCcwSquare className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        const currentRotation = selected.rotation ?? 0
+                        // Rotate 90 degrees clockwise (right)
+                        const newRotation = (currentRotation + 90) % 360
+                        applyScene({
+                          ...scene,
+                          elements: scene.elements.map((el) =>
+                            el.id === selected.id
+                              ? ({ ...el, rotation: newRotation } as any)
+                              : el,
+                          ),
+                        })
+                      }}
+                      title="Rodar 90° para a direita"
+                    >
+                      <RotateCwSquare className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs text-muted-foreground">Rotação (graus)</div>
+                    <Input
+                      type="number"
+                      value={selected.rotation ?? 0}
+                      onChange={(e) =>
+                        applyScene({
+                          ...scene,
+                          elements: scene.elements.map((el) =>
+                            el.id === selected.id
+                              ? ({ ...el, rotation: Number(e.target.value) } as any)
+                              : el,
+                          ),
+                        })
+                      }
+                    />
+                  </div>
                 </div>
               </>
             ) : null}
