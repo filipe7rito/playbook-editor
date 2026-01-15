@@ -3,10 +3,15 @@
 import {
   addToken,
   beginArrow,
+  beginGoal,
   beginLine,
   beginPath,
   beginText,
   beginZone,
+  clampRectToFieldBounds,
+  resizeGoalFromCorner,
+  resizeGoalFromDrag,
+  resizeGoalFromEdge,
   resizeZoneFromCorner,
   resizeZoneFromDrag,
   resizeZoneFromEdge,
@@ -20,6 +25,7 @@ import {
   calculateViewport,
   canvasToField,
   clampToFieldBounds,
+  getFieldDimensions,
 } from '../engine/viewport'
 
 export function usePointerHandlers(args: {
@@ -153,6 +159,23 @@ export function usePointerHandlers(args: {
         })
         return
       }
+
+      if (
+        el.kind === 'goal' &&
+        handleHit.handle !== 'from' &&
+        handleHit.handle !== 'to' &&
+        handleHit.handle !== 'corner' &&
+        handleHit.handle !== 'none'
+      ) {
+        setDrag({
+          id: handleHit.id,
+          start: p,
+          type: 'resizeGoal',
+          handle: handleHit.handle,
+          baseScene: scene,
+        })
+        return
+      }
     }
 
     // 1) selecionar sempre se clicou num elemento
@@ -177,6 +200,19 @@ export function usePointerHandlers(args: {
       if (el.kind === 'zone') {
         // Zone movement is handled by hitTestHandle above
         // If we get here, it means we're clicking on the zone but not on a corner
+        setDrag({
+          id,
+          start: p,
+          origin: { x: el.x, y: el.y },
+          type: 'move',
+          baseScene: scene,
+        })
+        return
+      }
+
+      if (el.kind === 'goal') {
+        // Goal movement is handled by hitTestHandle above
+        // If we get here, it means we're clicking on the goal but not on a corner
         setDrag({
           id,
           start: p,
@@ -220,7 +256,8 @@ export function usePointerHandlers(args: {
     // Items use full field dimensions regardless of pitch type
     // (items stay in same position, only pitch lines change)
     const viewport = getViewport()
-    const constrainedP = clampToFieldBounds(p, viewport, 'full')
+    const fieldType = scene.pitch.type === 'free' ? 'full' : scene.pitch.type
+    const constrainedP = clampToFieldBounds(p, viewport, fieldType)
 
     if (tool === 'player') {
       const res = addToken(scene, activeLayer, 'player', constrainedP)
@@ -242,6 +279,18 @@ export function usePointerHandlers(args: {
     }
     if (tool === 'ball') {
       const res = addToken(scene, activeLayer, 'ball', constrainedP)
+      applyScene(res.scene)
+      setSelectedId(res.createdId)
+      return
+    }
+    if (tool === 'flag') {
+      const res = addToken(scene, activeLayer, 'flag', constrainedP)
+      applyScene(res.scene)
+      setSelectedId(res.createdId)
+      return
+    }
+    if (tool === 'disc') {
+      const res = addToken(scene, activeLayer, 'disc', constrainedP)
       applyScene(res.scene)
       setSelectedId(res.createdId)
       return
@@ -290,14 +339,30 @@ export function usePointerHandlers(args: {
     }
 
     if (tool === 'zone') {
-      const res = beginZone(scene, activeLayer, p)
+      // constrainedP is already clamped above
+      const res = beginZone(scene, activeLayer, constrainedP)
       replaceScene(res.scene)
       setSelectedId(res.createdId)
       setDrag({
         id: res.createdId,
-        start: p,
+        start: constrainedP,
         type: 'draw',
         drawKind: 'zone',
+        baseScene: scene,
+      })
+      return
+    }
+
+    if (tool === 'goal') {
+      // constrainedP is already clamped above
+      const res = beginGoal(scene, activeLayer, constrainedP)
+      replaceScene(res.scene)
+      setSelectedId(res.createdId)
+      setDrag({
+        id: res.createdId,
+        start: constrainedP,
+        type: 'draw',
+        drawKind: 'goal',
         baseScene: scene,
       })
       return
@@ -328,7 +393,15 @@ export function usePointerHandlers(args: {
       }
       if (el.kind === 'zone') {
         // resizeZoneFromDrag already enforces minimum 20x20
-        const resized = resizeZoneFromDrag(drag.start, p)
+        const fieldType = scene.pitch.type === 'free' ? 'full' : scene.pitch.type
+        const resized = resizeZoneFromDrag(drag.start, p, fieldType)
+        replaceScene(updateElement(scene, el.id, resized as any))
+        return
+      }
+      if (el.kind === 'goal') {
+        // resizeGoalFromDrag already enforces minimum 8x5
+        const fieldType = scene.pitch.type === 'free' ? 'full' : scene.pitch.type
+        const resized = resizeGoalFromDrag(drag.start, p, fieldType)
         replaceScene(updateElement(scene, el.id, resized as any))
         return
       }
@@ -424,6 +497,8 @@ export function usePointerHandlers(args: {
     }
 
     if (el.kind === 'zone') {
+      const fieldType = scene.pitch.type === 'free' ? 'full' : scene.pitch.type
+      
       if (drag.type === 'resizeZone' && drag.handle) {
         // Check if it's an edge handle or corner handle
         if (
@@ -437,6 +512,7 @@ export function usePointerHandlers(args: {
             { x: el.x, y: el.y, w: el.w, h: el.h },
             drag.handle as 'top' | 'bottom' | 'left' | 'right',
             p,
+            fieldType,
           )
           replaceScene(updateElement(scene, el.id, resized as any))
         } else {
@@ -449,22 +525,83 @@ export function usePointerHandlers(args: {
               | 'bottomLeft'
               | 'bottomRight',
             p,
+            fieldType,
           )
           replaceScene(updateElement(scene, el.id, resized as any))
         }
       } else if (drag.type === 'draw') {
         // Drawing a new zone
-        const resized = resizeZoneFromDrag(drag.start, p)
+        const resized = resizeZoneFromDrag(drag.start, p, fieldType)
         replaceScene(updateElement(scene, el.id, resized as any))
       } else {
-        // Moving the zone
+        // Moving the zone - clamp to keep within bounds
         const origin = drag.origin!
         const dx = p.x - drag.start.x
         const dy = p.y - drag.start.y
+        const newRect = clampRectToFieldBounds(
+          { x: origin.x + dx, y: origin.y + dy, w: el.w, h: el.h },
+          fieldType,
+        )
         replaceScene(
           updateElement(scene, el.id, {
-            x: origin.x + dx,
-            y: origin.y + dy,
+            x: newRect.x,
+            y: newRect.y,
+          } as any),
+        )
+      }
+      return
+    }
+
+    if (el.kind === 'goal') {
+      const fieldType = scene.pitch.type === 'free' ? 'full' : scene.pitch.type
+      
+      if (drag.type === 'resizeGoal' && drag.handle) {
+        // Check if it's an edge handle or corner handle
+        if (
+          drag.handle === 'top' ||
+          drag.handle === 'bottom' ||
+          drag.handle === 'left' ||
+          drag.handle === 'right'
+        ) {
+          // Resize from edge (one-directional)
+          const resized = resizeGoalFromEdge(
+            { x: el.x, y: el.y, w: el.w, h: el.h },
+            drag.handle as 'top' | 'bottom' | 'left' | 'right',
+            p,
+            fieldType,
+          )
+          replaceScene(updateElement(scene, el.id, resized as any))
+        } else {
+          // Resize from corner
+          const resized = resizeGoalFromCorner(
+            { x: el.x, y: el.y, w: el.w, h: el.h },
+            drag.handle as
+              | 'topLeft'
+              | 'topRight'
+              | 'bottomLeft'
+              | 'bottomRight',
+            p,
+            fieldType,
+          )
+          replaceScene(updateElement(scene, el.id, resized as any))
+        }
+      } else if (drag.type === 'draw') {
+        // Drawing a new goal
+        const resized = resizeGoalFromDrag(drag.start, p, fieldType)
+        replaceScene(updateElement(scene, el.id, resized as any))
+      } else {
+        // Moving the goal - clamp to keep within bounds
+        const origin = drag.origin!
+        const dx = p.x - drag.start.x
+        const dy = p.y - drag.start.y
+        const newRect = clampRectToFieldBounds(
+          { x: origin.x + dx, y: origin.y + dy, w: el.w, h: el.h },
+          fieldType,
+        )
+        replaceScene(
+          updateElement(scene, el.id, {
+            x: newRect.x,
+            y: newRect.y,
           } as any),
         )
       }
@@ -531,6 +668,47 @@ export function usePointerHandlers(args: {
               updateElement(scene, el.id, { points: simplified } as any),
             )
           }
+        }
+      }
+      // Enforce minimum size for zones when finishing drawing
+      if (drag.type === 'draw' && drag.drawKind === 'zone') {
+        const el = scene.elements.find((x) => x.id === drag.id)
+        if (el && el.kind === 'zone' && (el.w < 20 || el.h < 20)) {
+          // Always use full field dimensions for clamping
+          // Coordinate system is always full field, regardless of pitch type
+          const fieldDims = getFieldDimensions('full')
+          const minSize = { w: Math.max(el.w, 20), h: Math.max(el.h, 20) }
+          // Ensure it still fits within bounds
+          let x = Math.max(0, el.x)
+          let y = Math.max(0, el.y)
+          if (x + minSize.w > fieldDims.width) x = Math.max(0, fieldDims.width - minSize.w)
+          if (y + minSize.h > fieldDims.height) y = Math.max(0, fieldDims.height - minSize.h)
+          replaceScene(updateElement(scene, el.id, { x, y, w: minSize.w, h: minSize.h } as any))
+        }
+      }
+      // Enforce minimum size for goals when finishing drawing
+      if (drag.type === 'draw' && drag.drawKind === 'goal') {
+        const el = scene.elements.find((x) => x.id === drag.id)
+        if (el && el.kind === 'goal') {
+          // Always use full field dimensions for clamping
+          // Coordinate system is always full field, regardless of pitch type
+          const fieldDims = getFieldDimensions('full')
+          // Use bigger default size: 20x18 if goal is too small
+          const MIN_W = 8
+          const MIN_H = 5
+          const DEFAULT_W = 20
+          const DEFAULT_H = 18
+          // If goal is too small (especially if it's zero or very small), use default size
+          const minSize = { 
+            w: el.w < MIN_W ? DEFAULT_W : Math.max(el.w, MIN_W), 
+            h: el.h < MIN_H ? DEFAULT_H : Math.max(el.h, MIN_H) 
+          }
+          // Ensure it still fits within bounds
+          let x = Math.max(0, el.x)
+          let y = Math.max(0, el.y)
+          if (x + minSize.w > fieldDims.width) x = Math.max(0, fieldDims.width - minSize.w)
+          if (y + minSize.h > fieldDims.height) y = Math.max(0, fieldDims.height - minSize.h)
+          replaceScene(updateElement(scene, el.id, { x, y, w: minSize.w, h: minSize.h } as any))
         }
       }
       commitFrom(drag.baseScene)

@@ -197,9 +197,9 @@ export function clampToFieldBounds(
   _viewport: Viewport,
   fieldType: 'full' | 'half' | 'quarter' | 'free',
 ): Point {
-  // For 'free' type, use full field dimensions
-  const actualFieldType = fieldType === 'free' ? 'full' : fieldType
-  const fieldDims = getFieldDimensions(actualFieldType)
+  // Always use full field dimensions for clamping
+  // Coordinate system is always full field, regardless of pitch type
+  const fieldDims = getFieldDimensions('full')
   return {
     x: Math.max(0, Math.min(fieldDims.width, point.x)),
     y: Math.max(0, Math.min(fieldDims.height, point.y)),

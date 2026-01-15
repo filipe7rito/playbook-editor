@@ -5,6 +5,9 @@ import { Separator } from "@/components/ui/separator";
 import {
     ArrowRight,
     Circle,
+    CircleDot,
+    Flag,
+    Goal,
     Layers,
     MapPin,
     MousePointer2,
@@ -57,6 +60,9 @@ export function Toolbar({
       <ToolButton active={tool === "opponent"} onClick={() => setTool("opponent")} icon={<Circle className="h-4 w-4" />} label="Adversário" />
       <ToolButton active={tool === "cone"} onClick={() => setTool("cone")} icon={<MapPin className="h-4 w-4" />} label="Cone" />
       <ToolButton active={tool === "ball"} onClick={() => setTool("ball")} icon={<Circle className="h-4 w-4" />} label="Bola" />
+      <ToolButton active={tool === "flag"} onClick={() => setTool("flag")} icon={<Flag className="h-4 w-4" />} label="Bandeira" />
+      <ToolButton active={tool === "disc"} onClick={() => setTool("disc")} icon={<CircleDot className="h-4 w-4" />} label="Disco" />
+      <ToolButton active={tool === "goal"} onClick={() => setTool("goal")} icon={<Goal className="h-4 w-4" />} label="Baliza" />
       
       <Separator orientation="vertical" className="h-6" />
       

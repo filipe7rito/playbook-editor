@@ -2,6 +2,7 @@ import { LayerId, Point, Scene } from '../engine/types'
 import type { Viewport } from '../engine/viewport'
 import { fieldToCanvas } from '../engine/viewport'
 import { drawPitch } from './drawPitch'
+import { loadIcon, getIcon } from './iconLoader'
 
 // Element scaling constraints
 // Elements should scale with the pitch but stay within reasonable bounds
@@ -109,25 +110,74 @@ export function renderScene(
         const pos = fieldToCanvas({ x: el.x, y: el.y }, viewport, fieldType)
         // Scale token size with clamped element scale
         const radius = el.r * elementScale
+        const size = radius * 2
 
-        const fill =
-          el.tokenType === 'cone'
-            ? 'rgba(255,198,0,0.95)'
-            : el.tokenType === 'ball'
-              ? 'rgba(255,255,255,0.95)'
-              : el.tokenType === 'opponent'
-                ? 'rgba(255,80,80,0.95)'
-                : 'rgba(120,200,255,0.95)'
+        // Try to use SVG icon for specific token types
+        let iconPath: string | null = null
+        if (el.tokenType === 'cone') {
+          iconPath = '/icons/training/cone.svg'
+        } else if (el.tokenType === 'flag') {
+          iconPath = '/icons/training/flag.svg'
+        } else if (el.tokenType === 'ball') {
+          iconPath = '/icons/training/ball.svg'
+        } else if (el.tokenType === 'disc') {
+          iconPath = '/icons/training/disc.svg'
+        }
 
-        ctx.fillStyle = fill
-        ctx.strokeStyle = 'rgba(0,0,0,0.35)'
-        ctx.lineWidth = (isSel ? 4 : 3) * elementScale
-        ctx.beginPath()
-        ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
-        ctx.fill()
-        ctx.stroke()
+        const iconImg = iconPath ? getIcon(iconPath) : null
 
+        if (iconImg && iconImg.complete) {
+          // Draw SVG icon
+          ctx.save()
+          ctx.translate(pos.x, pos.y)
+          ctx.drawImage(iconImg, -size / 2, -size / 2, size, size)
+          ctx.restore()
+        } else {
+          // Fallback to simple shape
+          const fill =
+            el.tokenType === 'cone'
+              ? 'rgba(255,198,0,0.95)'
+              : el.tokenType === 'ball'
+                ? 'rgba(255,255,255,0.95)'
+                : el.tokenType === 'opponent'
+                  ? 'rgba(255,80,80,0.95)'
+                  : el.tokenType === 'flag'
+                    ? 'rgba(255,100,100,0.95)'
+                    : el.tokenType === 'disc'
+                      ? 'rgba(100,200,100,0.95)'
+                      : 'rgba(120,200,255,0.95)'
+
+          ctx.fillStyle = fill
+          ctx.strokeStyle = 'rgba(0,0,0,0.35)'
+          ctx.lineWidth = (isSel ? 4 : 3) * elementScale
+          ctx.beginPath()
+          ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+        }
+
+        // Draw number on top (works for both icon and fallback)
         if (typeof el.number === 'number') {
+          const fontSize = 14 * elementScale
+          ctx.font = `700 ${fontSize}px ui-sans-serif, system-ui`
+          ctx.fillStyle = 'rgba(0,0,0,0.8)'
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillText(String(el.number), pos.x, pos.y)
+          ctx.textAlign = 'left'
+          ctx.textBaseline = 'alphabetic'
+        }
+
+        // Load icon if not already loaded
+        if (iconPath && !getIcon(iconPath)) {
+          loadIcon(iconPath).catch(() => {
+            // Silently fail - will use fallback shape
+          })
+        }
+
+        // Draw number for icon (already handled in icon branch above)
+        // Draw label for both icon and fallback
+        if (el.label) {
           const fontSize = 14 * elementScale
           ctx.font = `700 ${fontSize}px ui-sans-serif, system-ui`
           ctx.fillStyle = 'rgba(0,0,0,0.8)'
@@ -159,6 +209,18 @@ export function renderScene(
       }
 
       if (el.kind === 'zone') {
+        // Skip rendering if zone has zero or negative size (during initial drawing)
+        if (el.w <= 0 || el.h <= 0) {
+          // Still show a small indicator at the start point
+          const pos = fieldToCanvas({ x: el.x, y: el.y }, viewport, fieldType)
+          ctx.strokeStyle = 'rgba(255,255,255,0.7)'
+          ctx.lineWidth = 2 * elementScale
+          ctx.beginPath()
+          ctx.arc(pos.x, pos.y, 4 * elementScale, 0, Math.PI * 2)
+          ctx.stroke()
+          continue
+        }
+        
         const pos = fieldToCanvas({ x: el.x, y: el.y }, viewport, fieldType)
         const size = { w: el.w * viewport.scale, h: el.h * viewport.scale }
 
@@ -184,6 +246,117 @@ export function renderScene(
             el.label,
             elementScale,
           )
+
+        if (isHover && !isSel) {
+          ctx.strokeStyle = 'rgba(255,255,255,0.85)'
+          ctx.lineWidth = 2 * elementScale
+          const hoverPadding = 2 * elementScale
+          ctx.strokeRect(
+            pos.x - hoverPadding,
+            pos.y - hoverPadding,
+            size.w + hoverPadding * 2,
+            size.h + hoverPadding * 2,
+          )
+        }
+      }
+
+      if (el.kind === 'goal') {
+        // Skip rendering if goal has zero or negative size (during initial drawing)
+        if (el.w <= 0 || el.h <= 0) {
+          // Still show a small indicator at the start point
+          const pos = fieldToCanvas({ x: el.x, y: el.y }, viewport, fieldType)
+          ctx.strokeStyle = 'rgba(255,255,255,0.7)'
+          ctx.lineWidth = 2 * elementScale
+          ctx.beginPath()
+          ctx.arc(pos.x, pos.y, 4 * elementScale, 0, Math.PI * 2)
+          ctx.stroke()
+          continue
+        }
+        
+        const pos = fieldToCanvas({ x: el.x, y: el.y }, viewport, fieldType)
+        const size = { w: el.w * viewport.scale, h: el.h * viewport.scale }
+        const rotation = el.rotation ?? 0
+
+        // Try to use SVG icon (try top-view first, fallback to side view)
+        let iconPath = '/icons/training/goal-topview.svg'
+        let iconImg = getIcon(iconPath)
+        // Fallback to side-view goal if top-view not available
+        if (!iconImg || !iconImg.complete) {
+          iconPath = '/icons/training/goal.svg'
+          iconImg = getIcon(iconPath)
+        }
+
+        ctx.save()
+        // Apply rotation if specified
+        if (rotation !== 0) {
+          ctx.translate(pos.x + size.w / 2, pos.y + size.h / 2)
+          ctx.rotate((rotation * Math.PI) / 180)
+          ctx.translate(-(pos.x + size.w / 2), -(pos.y + size.h / 2))
+        }
+
+        if (iconImg && iconImg.complete) {
+          // Draw SVG icon
+          ctx.drawImage(iconImg, pos.x, pos.y, size.w, size.h)
+        } else {
+          // Fallback to drawn goal posts
+          // Draw goal posts (rectangular frame)
+          ctx.strokeStyle = 'rgba(255,255,255,0.95)'
+          ctx.lineWidth = (isSel ? 5 : 4) * elementScale
+          ctx.strokeRect(pos.x, pos.y, size.w, size.h)
+
+          // Draw net pattern (diagonal mesh)
+          ctx.strokeStyle = 'rgba(255,255,255,0.4)'
+          ctx.lineWidth = 1 * elementScale
+          const netSpacing = 6 * elementScale
+          // Horizontal lines
+          for (let y = pos.y + netSpacing; y < pos.y + size.h; y += netSpacing) {
+            ctx.beginPath()
+            ctx.moveTo(pos.x, y)
+            ctx.lineTo(pos.x + size.w, y)
+            ctx.stroke()
+          }
+          // Vertical lines
+          for (let x = pos.x + netSpacing; x < pos.x + size.w; x += netSpacing) {
+            ctx.beginPath()
+            ctx.moveTo(x, pos.y)
+            ctx.lineTo(x, pos.y + size.h)
+            ctx.stroke()
+          }
+          // Diagonal lines for net effect
+          ctx.strokeStyle = 'rgba(255,255,255,0.25)'
+          const diagonalSpacing = 8 * elementScale
+          for (let i = -size.h; i < size.w; i += diagonalSpacing) {
+            ctx.beginPath()
+            ctx.moveTo(pos.x + i, pos.y)
+            ctx.lineTo(pos.x + i + size.h, pos.y + size.h)
+            ctx.stroke()
+          }
+          for (let i = size.w; i > -size.h; i -= diagonalSpacing) {
+            ctx.beginPath()
+            ctx.moveTo(pos.x + i, pos.y)
+            ctx.lineTo(pos.x + i - size.h, pos.y + size.h)
+            ctx.stroke()
+          }
+        }
+
+        // Load icon if not already loaded
+        if (!getIcon(iconPath)) {
+          loadIcon(iconPath).catch(() => {
+            // Silently fail - will use fallback drawing
+          })
+        }
+
+        ctx.restore()
+
+        if (el.label) {
+          drawText(
+            ctx,
+            pos.x + 8 * elementScale,
+            pos.y + 20 * elementScale,
+            el.label,
+            elementScale,
+          )
+        }
 
         if (isHover && !isSel) {
           ctx.strokeStyle = 'rgba(255,255,255,0.85)'
@@ -349,6 +522,61 @@ export function renderScene(
         handle(pos.x + size.w, pos.y + size.h)
 
         // Edge handles for one-directional resize (circular, softer handles)
+        const edgeHandle = (x: number, y: number) => {
+          ctx.setLineDash([])
+          ctx.fillStyle = 'rgba(255, 255, 255, 1)'
+          ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)'
+          ctx.lineWidth = 2 * elementScale
+          const radius = 5 * elementScale
+          ctx.beginPath()
+          ctx.arc(x, y, radius, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+          // Inner dot for better visibility
+          ctx.fillStyle = 'rgba(59, 130, 246, 0.8)'
+          ctx.beginPath()
+          ctx.arc(x, y, 2.5 * elementScale, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.setLineDash([6 * elementScale, 6 * elementScale])
+        }
+
+        edgeHandle(pos.x + size.w / 2, pos.y) // top
+        edgeHandle(pos.x + size.w / 2, pos.y + size.h) // bottom
+        edgeHandle(pos.x, pos.y + size.h / 2) // left
+        edgeHandle(pos.x + size.w, pos.y + size.h / 2) // right
+      } else if (sel.kind === 'goal') {
+        const pos = fieldToCanvas({ x: sel.x, y: sel.y }, viewport, fieldType)
+        const size = { w: sel.w * viewport.scale, h: sel.h * viewport.scale }
+        const pad = 6 * elementScale
+
+        // Selection background (subtle overlay)
+        ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
+        ctx.fillRect(
+          pos.x - pad,
+          pos.y - pad,
+          size.w + pad * 2,
+          size.h + pad * 2,
+        )
+
+        // Selection border (cleaner, more visible)
+        ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
+        ctx.lineWidth = 2 * elementScale
+        ctx.setLineDash([8 * elementScale, 4 * elementScale])
+        ctx.strokeRect(
+          pos.x - pad,
+          pos.y - pad,
+          size.w + pad * 2,
+          size.h + pad * 2,
+        )
+        ctx.setLineDash([])
+
+        // Corner handles
+        handle(pos.x, pos.y)
+        handle(pos.x + size.w, pos.y)
+        handle(pos.x, pos.y + size.h)
+        handle(pos.x + size.w, pos.y + size.h)
+
+        // Edge handles for one-directional resize
         const edgeHandle = (x: number, y: number) => {
           ctx.setLineDash([])
           ctx.fillStyle = 'rgba(255, 255, 255, 1)'

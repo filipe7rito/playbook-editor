@@ -55,6 +55,9 @@ export function hitTest(scene: Scene, p: Point): string | undefined {
       if (el.kind === 'zone') {
         if (withinRect(p, el.x, el.y, el.w, el.h)) return el.id
       }
+      if (el.kind === 'goal') {
+        if (withinRect(p, el.x, el.y, el.w, el.h)) return el.id
+      }
       if (el.kind === 'text') {
         if (withinRect(p, el.x - 4, el.y - 16, 240, 22)) return el.id
       }
@@ -155,6 +158,54 @@ export function hitTestHandle(
         return { id: el.id, handle: edge.handle }
       }
     }
+  }
+
+  if (el.kind === 'goal') {
+    // For small goals, prioritize moving over resizing
+    // Check if click is in the center region (avoid handles for easier moving)
+    const centerMargin = Math.min(el.w * 0.3, el.h * 0.3, 5) // At least 30% margin, but at least 5 units
+    const isInCenter = 
+      p.x >= el.x + centerMargin && 
+      p.x <= el.x + el.w - centerMargin &&
+      p.y >= el.y + centerMargin && 
+      p.y <= el.y + el.h - centerMargin
+    
+    // If in center, don't return a handle (allows move instead)
+    if (isInCenter) {
+      return { id: el.id, handle: 'none' as const }
+    }
+    
+    // For edges/corners, use a smaller handle radius for goals to avoid accidental resizing
+    const goalHandleRadius = Math.min(HANDLE_RADIUS, Math.min(el.w, el.h) * 0.4)
+    
+    // Check corners first (higher priority)
+    const corners = [
+      { x: el.x, y: el.y, handle: 'topLeft' as const },
+      { x: el.x + el.w, y: el.y, handle: 'topRight' as const },
+      { x: el.x, y: el.y + el.h, handle: 'bottomLeft' as const },
+      { x: el.x + el.w, y: el.y + el.h, handle: 'bottomRight' as const },
+    ]
+    for (const corner of corners) {
+      if (pointDist(p, corner) <= goalHandleRadius) {
+        return { id: el.id, handle: corner.handle }
+      }
+    }
+
+    // Check edges for one-directional resize
+    const edgeHandles = [
+      { x: el.x + el.w / 2, y: el.y, handle: 'top' as const },
+      { x: el.x + el.w / 2, y: el.y + el.h, handle: 'bottom' as const },
+      { x: el.x, y: el.y + el.h / 2, handle: 'left' as const },
+      { x: el.x + el.w, y: el.y + el.h / 2, handle: 'right' as const },
+    ]
+    for (const edge of edgeHandles) {
+      if (pointDist(p, edge) <= goalHandleRadius) {
+        return { id: el.id, handle: edge.handle }
+      }
+    }
+    
+    // If we reach here, click was outside center but not on a handle
+    return { id: el.id, handle: 'none' as const }
   }
 
   return undefined

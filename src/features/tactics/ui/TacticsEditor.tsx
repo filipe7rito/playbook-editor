@@ -82,6 +82,7 @@ export function TacticsEditor() {
       editor.tool === 'arrow' ||
       editor.tool === 'line' ||
       editor.tool === 'zone' ||
+      editor.tool === 'goal' ||
       editor.tool === 'path'
     )
       return 'crosshair'
@@ -90,7 +91,9 @@ export function TacticsEditor() {
       editor.tool === 'player' ||
       editor.tool === 'opponent' ||
       editor.tool === 'cone' ||
-      editor.tool === 'ball'
+      editor.tool === 'ball' ||
+      editor.tool === 'flag' ||
+      editor.tool === 'disc'
     )
       return 'copy'
 

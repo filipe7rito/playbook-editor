@@ -204,6 +204,44 @@ export function Inspector({
               </>
             ) : null}
 
+            {selected.kind === 'goal' ? (
+              <>
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">Etiqueta</div>
+                  <Input
+                    value={selected.label ?? ''}
+                    onChange={(e) =>
+                      applyScene({
+                        ...scene,
+                        elements: scene.elements.map((el) =>
+                          el.id === selected.id
+                            ? ({ ...el, label: e.target.value } as any)
+                            : el,
+                        ),
+                      })
+                    }
+                  />
+                </div>
+                <div className="space-y-1">
+                  <div className="text-xs text-muted-foreground">Rotação (graus)</div>
+                  <Input
+                    type="number"
+                    value={selected.rotation ?? 0}
+                    onChange={(e) =>
+                      applyScene({
+                        ...scene,
+                        elements: scene.elements.map((el) =>
+                          el.id === selected.id
+                            ? ({ ...el, rotation: Number(e.target.value) } as any)
+                            : el,
+                        ),
+                      })
+                    }
+                  />
+                </div>
+              </>
+            ) : null}
+
             {selected.kind === 'text' ? (
               <div className="space-y-1">
                 <div className="text-xs text-muted-foreground">Texto</div>

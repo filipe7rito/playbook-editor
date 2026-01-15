@@ -3,6 +3,7 @@
 import { useLayoutEffect } from 'react'
 import type { Scene } from '../engine/types'
 import { calculateViewport } from '../engine/viewport'
+import { preloadIcons } from '../render/iconLoader'
 import { renderScene } from '../render/renderScene'
 
 export function useCanvasRenderer(args: {
@@ -13,6 +14,11 @@ export function useCanvasRenderer(args: {
   hoverId?: string
 }) {
   const { canvasRef, wrapRef, scene, selectedId, hoverId } = args
+
+  // Preload icons on mount
+  useLayoutEffect(() => {
+    preloadIcons()
+  }, [])
 
   useLayoutEffect(() => {
     const canvas = canvasRef.current

@@ -4,6 +4,9 @@ export type Tool =
   | 'opponent'
   | 'cone'
   | 'ball'
+  | 'flag'
+  | 'disc'
+  | 'goal'
   | 'arrow'
   | 'path'
   | 'line'
@@ -24,12 +27,21 @@ export type ElementBase = {
 export type ShapeElement =
   | (ElementBase & {
       kind: 'token'
-      tokenType: 'player' | 'opponent' | 'cone' | 'ball'
+      tokenType: 'player' | 'opponent' | 'cone' | 'ball' | 'flag' | 'disc'
       x: number
       y: number
       r: number
       label?: string
       number?: number
+    })
+  | (ElementBase & {
+      kind: 'goal'
+      x: number
+      y: number
+      w: number
+      h: number
+      rotation?: number
+      label?: string
     })
   | (ElementBase & {
       kind: 'arrow'
@@ -85,8 +97,8 @@ export type DragState =
       id: string
       start: Point
       origin?: Point
-      type: 'move' | 'resizeZone' | 'resizeLine' | 'resizePath' | 'draw'
-      drawKind?: 'arrow' | 'line' | 'path' | 'zone'
+      type: 'move' | 'resizeZone' | 'resizeGoal' | 'resizeLine' | 'resizePath' | 'draw'
+      drawKind?: 'arrow' | 'line' | 'path' | 'zone' | 'goal'
       handle?:
         | 'from'
         | 'to'

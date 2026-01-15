@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 100 100" xmlns="http://www.w3.org/2000/svg">
+  <!-- Goal opening (rectangle) - rounded top corners, square bottom corners -->
+  <path d="M 10 42 Q 10 40 12 40 L 88 40 Q 90 40 90 42 L 90 60 L 10 60 Z" 
+        fill="none" 
+        stroke="white" 
+        stroke-width="3" 
+        stroke-linecap="round" 
+        stroke-linejoin="round"/>
+  
+  <!-- Net pattern - white lines, properly aligned -->
+  <g stroke="white" stroke-width="1.5" stroke-opacity="0.5" fill="none" stroke-linecap="round">
+    <!-- Horizontal net lines (extend to edges) -->
+    <line x1="12" y1="45" x2="88" y2="45"/>
+    <line x1="12" y1="50" x2="88" y2="50"/>
+    <line x1="12" y1="55" x2="88" y2="55"/>
+    <!-- Vertical net lines (extend full height) -->
+    <line x1="20" y1="40" x2="20" y2="60"/>
+    <line x1="30" y1="40" x2="30" y2="60"/>
+    <line x1="40" y1="40" x2="40" y2="60"/>
+    <line x1="50" y1="40" x2="50" y2="60"/>
+    <line x1="60" y1="40" x2="60" y2="60"/>
+    <line x1="70" y1="40" x2="70" y2="60"/>
+    <line x1="80" y1="40" x2="80" y2="60"/>
+  </g>
+</svg>
