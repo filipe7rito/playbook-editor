@@ -85,8 +85,10 @@ export type DragState =
       id: string;
       start: Point;
       origin?: Point;
-      type: "move" | "resizeZone" | "draw";
+      type: "move" | "resizeZone" | "resizeLine" | "resizePath" | "draw";
       drawKind?: "arrow" | "line" | "path" | "zone";
+      handle?: "from" | "to" | "topLeft" | "topRight" | "bottomLeft" | "bottomRight";
+      baseScene?: Scene;
     }
   | undefined;
 

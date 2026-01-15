@@ -22,6 +22,8 @@ function distToSegment(p: Point, a: Point, b: Point) {
   return Math.hypot(p.x - proj.x, p.y - proj.y);
 }
 
+const HANDLE_RADIUS = 8;
+
 export function hitTest(scene: Scene, p: Point): string | undefined {
   const layerOrder: LayerId[] = ["tactics", "drills", "base"];
 
@@ -38,7 +40,11 @@ export function hitTest(scene: Scene, p: Point): string | undefined {
       if (el.locked) continue;
 
       if (el.kind === "token") {
-        if (pointDist(p, { x: el.x, y: el.y }) <= el.r + 6) return el.id;
+        // el.r is in pixels, but p is in field coordinates
+        // Convert pixel radius to field coordinates: approximate 1 pixel ≈ 0.15 field units
+        // This gives a reasonable hit area that matches the visual size
+        const hitRadius = (el.r + 6) * 0.15
+        if (pointDist(p, { x: el.x, y: el.y }) <= hitRadius) return el.id;
       }
       if (el.kind === "zone") {
         if (withinRect(p, el.x, el.y, el.w, el.h)) return el.id;
@@ -53,6 +59,55 @@ export function hitTest(scene: Scene, p: Point): string | undefined {
         for (let i = 0; i < el.points.length - 1; i++) {
           if (distToSegment(p, el.points[i], el.points[i + 1]) <= 8) return el.id;
         }
+      }
+    }
+  }
+
+  return undefined;
+}
+
+export function hitTestHandle(
+  scene: Scene,
+  p: Point,
+  selectedId?: string,
+): { id: string; handle: "from" | "to" | "corner" | "none" } | undefined {
+  if (!selectedId) return undefined;
+
+  const el = scene.elements.find((e) => e.id === selectedId);
+  if (!el || el.locked) return undefined;
+
+  if (el.kind === "arrow" || el.kind === "line") {
+    const fromDist = pointDist(p, el.from);
+    const toDist = pointDist(p, el.to);
+    if (fromDist <= HANDLE_RADIUS) {
+      return { id: el.id, handle: "from" };
+    }
+    if (toDist <= HANDLE_RADIUS) {
+      return { id: el.id, handle: "to" };
+    }
+  }
+
+  if (el.kind === "path" && el.points.length > 0) {
+    const firstDist = pointDist(p, el.points[0]);
+    const lastDist = pointDist(p, el.points[el.points.length - 1]);
+    if (firstDist <= HANDLE_RADIUS) {
+      return { id: el.id, handle: "from" };
+    }
+    if (lastDist <= HANDLE_RADIUS) {
+      return { id: el.id, handle: "to" };
+    }
+  }
+
+  if (el.kind === "zone") {
+    const corners = [
+      { x: el.x, y: el.y, handle: "topLeft" as const },
+      { x: el.x + el.w, y: el.y, handle: "topRight" as const },
+      { x: el.x, y: el.y + el.h, handle: "bottomLeft" as const },
+      { x: el.x + el.w, y: el.y + el.h, handle: "bottomRight" as const },
+    ];
+    for (const corner of corners) {
+      if (pointDist(p, corner) <= HANDLE_RADIUS) {
+        return { id: el.id, handle: corner.handle };
       }
     }
   }

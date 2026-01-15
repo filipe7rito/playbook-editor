@@ -7,11 +7,19 @@ import {
   beginPath,
   beginText,
   beginZone,
+  ensureMinLineLength,
+  resizeZoneFromCorner,
   resizeZoneFromDrag,
   updateElement,
 } from '../engine/commands'
-import { hitTest, pointDist } from '../engine/hitTest'
+import { hitTest, hitTestHandle, pointDist } from '../engine/hitTest'
 import type { LayerId, Point, Scene, Tool } from '../engine/types'
+import type { Viewport } from '../engine/viewport'
+import {
+  canvasToField,
+  calculateViewport,
+  clampToFieldBounds,
+} from '../engine/viewport'
 
 export function usePointerHandlers(args: {
   scene: Scene
@@ -25,6 +33,8 @@ export function usePointerHandlers(args: {
   applyScene: (next: Scene) => void
   replaceScene: (next: Scene) => void
   commitFrom: (base: Scene) => void
+  setTool: (tool: Tool) => void
+  wrapRef: React.RefObject<HTMLDivElement | null>
 }) {
   const {
     scene,
@@ -37,24 +47,92 @@ export function usePointerHandlers(args: {
     applyScene,
     replaceScene,
     commitFrom,
+    setTool,
+    wrapRef,
   } = args
 
-  const screenToCanvas = (
+  const getViewport = (): Viewport => {
+    const wrap = wrapRef.current
+    if (!wrap) {
+      return calculateViewport(800, 600, 'full', 'horizontal')
+    }
+    const rect = wrap.getBoundingClientRect()
+    return calculateViewport(
+      rect.width,
+      rect.height,
+      scene.pitch.type === 'smallSided' ? 'quarter' : scene.pitch.type,
+      scene.pitch.orientation,
+    )
+  }
+
+  const screenToField = (
     wrap: HTMLDivElement,
     e: React.PointerEvent,
   ): Point => {
     const r = wrap.getBoundingClientRect()
-    return { x: e.clientX - r.left, y: e.clientY - r.top }
+    const canvasPoint = { x: e.clientX - r.left, y: e.clientY - r.top }
+    const fieldType = scene.pitch.type === 'smallSided' ? 'quarter' : scene.pitch.type
+    const viewport = calculateViewport(
+      r.width,
+      r.height,
+      fieldType,
+      scene.pitch.orientation,
+    )
+    return canvasToField(canvasPoint, viewport, fieldType)
   }
 
   const onPointerDown = (wrap: HTMLDivElement) => (e: React.PointerEvent) => {
     ;(e.target as HTMLElement).setPointerCapture?.(e.pointerId)
-    const p = screenToCanvas(wrap, e)
+    const p = screenToField(wrap, e)
+
+    // Check for handle hits first (when element is selected)
+    const handleHit = hitTestHandle(scene, p, args.selectedId)
+    if (handleHit) {
+      const el = scene.elements.find((x) => x.id === handleHit.id)
+      if (!el || el.locked) return
+
+      setSelectedId(handleHit.id)
+      setTool('select') // Auto-switch to select tool
+
+      if (el.kind === 'arrow' || el.kind === 'line') {
+        setDrag({
+          id: handleHit.id,
+          start: p,
+          type: 'resizeLine',
+          handle: handleHit.handle,
+          baseScene: scene,
+        })
+        return
+      }
+
+      if (el.kind === 'path') {
+        setDrag({
+          id: handleHit.id,
+          start: p,
+          type: 'resizePath',
+          handle: handleHit.handle,
+          baseScene: scene,
+        })
+        return
+      }
+
+      if (el.kind === 'zone' && (handleHit.handle === 'topLeft' || handleHit.handle === 'topRight' || handleHit.handle === 'bottomLeft' || handleHit.handle === 'bottomRight')) {
+        setDrag({
+          id: handleHit.id,
+          start: p,
+          type: 'resizeZone',
+          handle: handleHit.handle,
+          baseScene: scene,
+        })
+        return
+      }
+    }
 
     // 1) selecionar sempre se clicou num elemento
     const id = hitTest(scene, p)
     if (id) {
       setSelectedId(id)
+      setTool('select') // Auto-switch to select tool when clicking an element
       const el = scene.elements.find((x) => x.id === id)
       if (!el || el.locked) return
 
@@ -70,23 +148,15 @@ export function usePointerHandlers(args: {
       }
 
       if (el.kind === 'zone') {
-        const corner = { x: el.x + el.w, y: el.y + el.h }
-        if (pointDist(p, corner) < 16) {
-          setDrag({
-            id,
-            start: p,
-            type: 'resizeZone',
-            baseScene: scene,
-          })
-        } else {
-          setDrag({
-            id,
-            start: p,
-            origin: { x: el.x, y: el.y },
-            type: 'move',
-            baseScene: scene,
-          })
-        }
+        // Zone movement is handled by hitTestHandle above
+        // If we get here, it means we're clicking on the zone but not on a corner
+        setDrag({
+          id,
+          start: p,
+          origin: { x: el.x, y: el.y },
+          type: 'move',
+          baseScene: scene,
+        })
         return
       }
 
@@ -120,26 +190,32 @@ export function usePointerHandlers(args: {
     // se layer locked, não cria
     if (scene.layers[activeLayer].locked) return
 
+    // Constrain point to field bounds
+    const viewport = getViewport()
+    const fieldType =
+      scene.pitch.type === 'smallSided' ? 'quarter' : scene.pitch.type
+    const constrainedP = clampToFieldBounds(p, viewport, fieldType)
+
     if (tool === 'player') {
-      const res = addToken(scene, activeLayer, 'player', p)
+      const res = addToken(scene, activeLayer, 'player', constrainedP)
       applyScene(res.scene)
       setSelectedId(res.createdId)
       return
     }
     if (tool === 'opponent') {
-      const res = addToken(scene, activeLayer, 'opponent', p)
+      const res = addToken(scene, activeLayer, 'opponent', constrainedP)
       applyScene(res.scene)
       setSelectedId(res.createdId)
       return
     }
     if (tool === 'cone') {
-      const res = addToken(scene, activeLayer, 'cone', p)
+      const res = addToken(scene, activeLayer, 'cone', constrainedP)
       applyScene(res.scene)
       setSelectedId(res.createdId)
       return
     }
     if (tool === 'ball') {
-      const res = addToken(scene, activeLayer, 'ball', p)
+      const res = addToken(scene, activeLayer, 'ball', constrainedP)
       applyScene(res.scene)
       setSelectedId(res.createdId)
       return
@@ -211,7 +287,7 @@ export function usePointerHandlers(args: {
   }
 
   const onPointerMove = (wrap: HTMLDivElement) => (e: React.PointerEvent) => {
-    const p = screenToCanvas(wrap, e)
+    const p = screenToField(wrap, e)
 
     if (!drag && tool === 'select') setHoverId(hitTest(scene, p))
     if (!drag) return
@@ -221,13 +297,14 @@ export function usePointerHandlers(args: {
 
     if (drag.type === 'draw') {
       if (el.kind === 'arrow' || el.kind === 'line') {
-        replaceScene(updateElement(scene, el.id, { to: p } as any))
+        const { from, to } = ensureMinLineLength(el.from, p)
+        replaceScene(updateElement(scene, el.id, { to } as any))
         return
       }
       if (el.kind === 'zone') {
-        replaceScene(
-          updateElement(scene, el.id, resizeZoneFromDrag(drag.start, p) as any),
-        )
+        // resizeZoneFromDrag already enforces minimum 20x20
+        const resized = resizeZoneFromDrag(drag.start, p)
+        replaceScene(updateElement(scene, el.id, resized as any))
         return
       }
       if (el.kind === 'path') {
@@ -243,28 +320,64 @@ export function usePointerHandlers(args: {
       return
     }
 
+    // Handle resize for arrows/lines
+    if ((el.kind === 'arrow' || el.kind === 'line') && drag.type === 'resizeLine') {
+      if (drag.handle === 'from') {
+        const { from, to } = ensureMinLineLength(p, el.to)
+        replaceScene(updateElement(scene, el.id, { from } as any))
+      } else if (drag.handle === 'to') {
+        const { from, to } = ensureMinLineLength(el.from, p)
+        replaceScene(updateElement(scene, el.id, { to } as any))
+      }
+      return
+    }
+
+    // Handle resize for paths
+    if (el.kind === 'path' && drag.type === 'resizePath') {
+      if (drag.handle === 'from' && el.points.length > 0) {
+        const newPoints = [...el.points]
+        newPoints[0] = p
+        replaceScene(updateElement(scene, el.id, { points: newPoints } as any))
+      } else if (drag.handle === 'to' && el.points.length > 0) {
+        const newPoints = [...el.points]
+        newPoints[newPoints.length - 1] = p
+        replaceScene(updateElement(scene, el.id, { points: newPoints } as any))
+      }
+      return
+    }
+
     if (el.kind === 'token' && drag.type === 'move') {
       const origin = drag.origin!
       const dx = p.x - drag.start.x
       const dy = p.y - drag.start.y
-      replaceScene(
-        updateElement(scene, el.id, {
-          x: origin.x + dx,
-          y: origin.y + dy,
-        } as any),
-      )
+      const newPos = {
+        x: origin.x + dx,
+        y: origin.y + dy,
+      }
+      // Constrain to field bounds
+      const viewport = getViewport()
+      const fieldType =
+        scene.pitch.type === 'smallSided' ? 'quarter' : scene.pitch.type
+      const constrainedPos = clampToFieldBounds(newPos, viewport, fieldType)
+      replaceScene(updateElement(scene, el.id, constrainedPos as any))
       return
     }
 
     if (el.kind === 'zone') {
-      if (drag.type === 'resizeZone') {
-        replaceScene(
-          updateElement(scene, el.id, {
-            w: Math.max(8, p.x - el.x),
-            h: Math.max(8, p.y - el.y),
-          } as any),
+      if (drag.type === 'resizeZone' && drag.handle) {
+        // Resize from the specific corner
+        const resized = resizeZoneFromCorner(
+          { x: el.x, y: el.y, w: el.w, h: el.h },
+          drag.handle as "topLeft" | "topRight" | "bottomLeft" | "bottomRight",
+          p,
         )
+        replaceScene(updateElement(scene, el.id, resized as any))
+      } else if (drag.type === 'draw') {
+        // Drawing a new zone
+        const resized = resizeZoneFromDrag(drag.start, p)
+        replaceScene(updateElement(scene, el.id, resized as any))
       } else {
+        // Moving the zone
         const origin = drag.origin!
         const dx = p.x - drag.start.x
         const dy = p.y - drag.start.y

@@ -38,6 +38,8 @@ export function TacticsEditor() {
     applyScene: editor.applyScene,
     replaceScene: editor.replaceScene,
     commitFrom: editor.commitFrom,
+    setTool: editor.setTool,
+    wrapRef,
   })
   const cursor = useMemo(() => {
     if (editor.drag) return 'grabbing'
@@ -127,12 +129,7 @@ export function TacticsEditor() {
         </div>
 
         {/* Content */}
-        <div className="grid flex-1 min-h-0 grid-cols-1 gap-3 md:grid-cols-[320px_1fr_360px]">
-          {/* Left */}
-          <div className="min-h-0 rounded-2xl border p-3">
-            <Toolbar tool={editor.tool} setTool={editor.setTool} />
-          </div>
-
+        <div className="grid flex-1 min-h-0 grid-cols-1 gap-3 md:grid-cols-[1fr_360px]">
           {/* Center */}
           <div className="relative min-h-0 overflow-hidden rounded-2xl border">
             <div ref={wrapRef} className="relative h-full min-h-0 w-full">
@@ -182,6 +179,11 @@ export function TacticsEditor() {
               </TabsContent>
             </Tabs>
           </div>
+        </div>
+
+        {/* Bottom Toolbar */}
+        <div className="rounded-2xl border p-3">
+          <Toolbar tool={editor.tool} setTool={editor.setTool} />
         </div>
       </div>
     </div>

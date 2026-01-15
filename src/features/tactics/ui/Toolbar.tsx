@@ -46,27 +46,28 @@ export function Toolbar({
   setTool: (t: Tool) => void;
 }) {
   return (
-    <div className="space-y-3">
-      <div className="text-sm font-semibold">Ferramentas</div>
-
-      <div className="grid grid-cols-2 gap-2">
-        <ToolButton active={tool === "select"} onClick={() => setTool("select")} icon={<MousePointer2 className="h-4 w-4" />} label="Selecionar" />
-        <ToolButton active={tool === "text"} onClick={() => setTool("text")} icon={<Type className="h-4 w-4" />} label="Texto" />
-
-        <ToolButton active={tool === "player"} onClick={() => setTool("player")} icon={<Circle className="h-4 w-4" />} label="Jogador" />
-        <ToolButton active={tool === "opponent"} onClick={() => setTool("opponent")} icon={<Circle className="h-4 w-4" />} label="Adversário" />
-
-        <ToolButton active={tool === "cone"} onClick={() => setTool("cone")} icon={<MapPin className="h-4 w-4" />} label="Cone" />
-        <ToolButton active={tool === "ball"} onClick={() => setTool("ball")} icon={<Circle className="h-4 w-4" />} label="Bola" />
-
-        <Separator className="col-span-2 my-1" />
-
-        <ToolButton active={tool === "arrow"} onClick={() => setTool("arrow")} icon={<ArrowRight className="h-4 w-4" />} label="Seta" />
-        <ToolButton active={tool === "path"} onClick={() => setTool("path")} icon={<Route className="h-4 w-4" />} label="Trajeto" />
-
-        <ToolButton active={tool === "line"} onClick={() => setTool("line")} icon={<Layers className="h-4 w-4" />} label="Linha" />
-        <ToolButton active={tool === "zone"} onClick={() => setTool("zone")} icon={<Square className="h-4 w-4" />} label="Zona" />
-      </div>
+    <div className="flex flex-wrap items-center gap-2">
+      <div className="text-sm font-semibold mr-2">Ferramentas:</div>
+      
+      <ToolButton active={tool === "select"} onClick={() => setTool("select")} icon={<MousePointer2 className="h-4 w-4" />} label="Selecionar" />
+      
+      <Separator orientation="vertical" className="h-6" />
+      
+      <ToolButton active={tool === "player"} onClick={() => setTool("player")} icon={<Circle className="h-4 w-4" />} label="Jogador" />
+      <ToolButton active={tool === "opponent"} onClick={() => setTool("opponent")} icon={<Circle className="h-4 w-4" />} label="Adversário" />
+      <ToolButton active={tool === "cone"} onClick={() => setTool("cone")} icon={<MapPin className="h-4 w-4" />} label="Cone" />
+      <ToolButton active={tool === "ball"} onClick={() => setTool("ball")} icon={<Circle className="h-4 w-4" />} label="Bola" />
+      
+      <Separator orientation="vertical" className="h-6" />
+      
+      <ToolButton active={tool === "arrow"} onClick={() => setTool("arrow")} icon={<ArrowRight className="h-4 w-4" />} label="Seta" />
+      <ToolButton active={tool === "line"} onClick={() => setTool("line")} icon={<Layers className="h-4 w-4" />} label="Linha" />
+      <ToolButton active={tool === "path"} onClick={() => setTool("path")} icon={<Route className="h-4 w-4" />} label="Trajeto" />
+      <ToolButton active={tool === "zone"} onClick={() => setTool("zone")} icon={<Square className="h-4 w-4" />} label="Zona" />
+      
+      <Separator orientation="vertical" className="h-6" />
+      
+      <ToolButton active={tool === "text"} onClick={() => setTool("text")} icon={<Type className="h-4 w-4" />} label="Texto" />
     </div>
   );
 }

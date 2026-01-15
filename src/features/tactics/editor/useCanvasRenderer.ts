@@ -2,6 +2,7 @@
 
 import { useLayoutEffect } from 'react'
 import type { Scene } from '../engine/types'
+import { calculateViewport } from '../engine/viewport'
 import { renderScene } from '../render/renderScene'
 
 export function useCanvasRenderer(args: {
@@ -31,7 +32,16 @@ export function useCanvasRenderer(args: {
       canvas.style.height = `${rect.height}px`
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      renderScene(ctx, rect.width, rect.height, scene, selectedId, hoverId)
+      
+      // Calculate viewport for current field type
+      const viewport = calculateViewport(
+        rect.width,
+        rect.height,
+        scene.pitch.type === 'smallSided' ? 'quarter' : scene.pitch.type,
+        scene.pitch.orientation,
+      )
+      
+      renderScene(ctx, viewport, scene, selectedId, hoverId)
     }
 
     const raf = requestAnimationFrame(resize)
