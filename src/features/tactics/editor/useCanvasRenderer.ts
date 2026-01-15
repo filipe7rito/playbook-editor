@@ -32,15 +32,16 @@ export function useCanvasRenderer(args: {
       canvas.style.height = `${rect.height}px`
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0)
-      
-      // Calculate viewport for current field type
+
+      // Calculate viewport for current field type (for free field, use full field dimensions)
+      const fieldType = scene.pitch.type === 'free' ? 'full' : scene.pitch.type
       const viewport = calculateViewport(
         rect.width,
         rect.height,
-        scene.pitch.type === 'smallSided' ? 'quarter' : scene.pitch.type,
-        scene.pitch.orientation,
+        fieldType,
+        'horizontal',
       )
-      
+
       renderScene(ctx, viewport, scene, selectedId, hoverId)
     }
 

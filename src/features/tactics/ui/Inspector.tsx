@@ -60,6 +60,10 @@ export function Inspector({
               <rect x="1" y="6" width="1.5" height="4" />
               <rect x="19" y="4" width="4" height="8" />
               <rect x="21.5" y="6" width="1.5" height="4" />
+              <path d="M 5 8 Q 8 6 8 4" strokeLinecap="round" />
+              <path d="M 5 8 Q 8 10 8 12" strokeLinecap="round" />
+              <path d="M 19 8 Q 16 6 16 4" strokeLinecap="round" />
+              <path d="M 19 8 Q 16 10 16 12" strokeLinecap="round" />
             </svg>
           </button>
 
@@ -89,26 +93,26 @@ export function Inspector({
               <rect x="1" y="1" width="22" height="14" rx="1" />
               <rect x="1" y="4" width="4" height="8" />
               <rect x="1" y="6" width="1.5" height="4" />
-              <path d="M 1 8 Q 6 8 6 4" />
-              <path d="M 1 8 Q 6 8 6 12" />
+              <path d="M 5 8 Q 8 6 8 4" strokeLinecap="round" />
+              <path d="M 5 8 Q 8 10 8 12" strokeLinecap="round" />
+              <ellipse cx="12" cy="15" rx="3" ry="2" />
             </svg>
           </button>
 
-          {/* Quarter Field Icon */}
+          {/* Free Field Icon - no lines, just green area */}
           <button
             onClick={() =>
               applyScene({
                 ...scene,
-                pitch: { ...scene.pitch, type: 'quarter' },
+                pitch: { ...scene.pitch, type: 'free' },
               })
             }
             className={`p-2 rounded border transition-colors ${
-              scene.pitch.type === 'quarter' ||
-              scene.pitch.type === 'smallSided'
+              scene.pitch.type === 'free'
                 ? 'bg-primary text-primary-foreground border-primary'
                 : 'bg-background border-border hover:bg-accent'
             }`}
-            title="Quarto Campo"
+            title="Campo Livre"
           >
             <svg
               width="24"
@@ -119,11 +123,52 @@ export function Inspector({
               strokeWidth="1.5"
             >
               <rect x="1" y="1" width="22" height="14" rx="1" />
-              <rect x="1" y="4" width="4" height="8" />
-              <rect x="1" y="6" width="1.5" height="4" />
             </svg>
           </button>
         </div>
+
+        {/* Offensive/Defensive toggle - Only show when half field is selected */}
+        {scene.pitch.type === 'half' && (
+          <div className="flex items-center gap-2">
+            <div className="text-xs font-semibold text-muted-foreground uppercase">
+              Lado
+            </div>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() =>
+                  applyScene({
+                    ...scene,
+                    pitch: { ...scene.pitch, halfSide: 'offensive' },
+                  })
+                }
+                className={`px-3 py-1.5 rounded border text-xs transition-colors ${
+                  (scene.pitch.halfSide || 'offensive') === 'offensive'
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-background border-border hover:bg-accent'
+                }`}
+                title="Ofensivo"
+              >
+                Ofensivo
+              </button>
+              <button
+                onClick={() =>
+                  applyScene({
+                    ...scene,
+                    pitch: { ...scene.pitch, halfSide: 'defensive' },
+                  })
+                }
+                className={`px-3 py-1.5 rounded border text-xs transition-colors ${
+                  scene.pitch.halfSide === 'defensive'
+                    ? 'bg-primary text-primary-foreground border-primary'
+                    : 'bg-background border-border hover:bg-accent'
+                }`}
+                title="Defensivo"
+              >
+                Defensivo
+              </button>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Element Inspector - Only when element is selected */}

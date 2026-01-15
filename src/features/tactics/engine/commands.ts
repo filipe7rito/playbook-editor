@@ -17,7 +17,7 @@ export function addToken(
     tokenType,
     x: p.x,
     y: p.y,
-    r: tokenType === 'cone' ? 9 : tokenType === 'ball' ? 8 : 14,
+    r: tokenType === 'cone' ? 8 : tokenType === 'ball' ? 7 : 12,
   }
   return {
     scene: { ...scene, elements: [...scene.elements, el] },
@@ -26,13 +26,13 @@ export function addToken(
 }
 
 export function beginArrow(scene: Scene, layer: LayerId, p: Point) {
-  const minTo = { x: p.x + MIN_LINE_LENGTH, y: p.y }
+  // Start with same point, will be updated on first move
   const el: ShapeElement = {
     id: uid(),
     layer,
     kind: 'arrow',
     from: p,
-    to: minTo,
+    to: p,
     dashed: false,
     label: '',
   }
@@ -43,13 +43,13 @@ export function beginArrow(scene: Scene, layer: LayerId, p: Point) {
 }
 
 export function beginLine(scene: Scene, layer: LayerId, p: Point) {
-  const minTo = { x: p.x + MIN_LINE_LENGTH, y: p.y }
+  // Start with same point, will be updated on first move
   const el: ShapeElement = {
     id: uid(),
     layer,
     kind: 'line',
     from: p,
-    to: minTo,
+    to: p,
     dashed: true,
   }
   return {
@@ -175,6 +175,37 @@ export function resizeZoneFromCorner(
   return { x, y, w: clamp(w, MIN_SIZE, 4000), h: clamp(h, MIN_SIZE, 4000) }
 }
 
+export function resizeZoneFromEdge(
+  zone: { x: number; y: number; w: number; h: number },
+  edge: 'top' | 'bottom' | 'left' | 'right',
+  current: Point,
+) {
+  const MIN_SIZE = 20
+  let x = zone.x
+  let y = zone.y
+  let w = zone.w
+  let h = zone.h
+
+  switch (edge) {
+    case 'top':
+      y = Math.min(current.y, zone.y + zone.h - MIN_SIZE)
+      h = zone.y + zone.h - y
+      break
+    case 'bottom':
+      h = Math.max(MIN_SIZE, current.y - zone.y)
+      break
+    case 'left':
+      x = Math.min(current.x, zone.x + zone.w - MIN_SIZE)
+      w = zone.x + zone.w - x
+      break
+    case 'right':
+      w = Math.max(MIN_SIZE, current.x - zone.x)
+      break
+  }
+
+  return { x, y, w: clamp(w, MIN_SIZE, 4000), h: clamp(h, MIN_SIZE, 4000) }
+}
+
 export function ensureMinLineLength(
   from: Point,
   to: Point,
@@ -195,4 +226,36 @@ export function ensureMinLineLength(
     }
   }
   return { from, to }
+}
+
+// Simplify path by removing points that are too close or colinear
+export function simplifyPath(points: Point[], minDistance: number = 20): Point[] {
+  if (points.length <= 2) return points
+  
+  const simplified: Point[] = [points[0]]
+  
+  for (let i = 1; i < points.length - 1; i++) {
+    const prev = simplified[simplified.length - 1]
+    const curr = points[i]
+    const next = points[i + 1]
+    
+    // Calculate distance from previous point
+    const dist = Math.hypot(curr.x - prev.x, curr.y - prev.y)
+    
+    // Calculate angle change (if point is colinear, we can skip it)
+    const angle1 = Math.atan2(curr.y - prev.y, curr.x - prev.x)
+    const angle2 = Math.atan2(next.y - curr.y, next.x - curr.x)
+    const angleDiff = Math.abs(angle1 - angle2)
+    const isColinear = angleDiff < 0.1 || angleDiff > Math.PI - 0.1
+    
+    // Keep point if it's far enough or creates a significant angle change
+    if (dist > minDistance || !isColinear) {
+      simplified.push(curr)
+    }
+  }
+  
+  // Always keep the last point
+  simplified.push(points[points.length - 1])
+  
+  return simplified
 }

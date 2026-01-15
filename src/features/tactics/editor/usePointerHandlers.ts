@@ -7,17 +7,18 @@ import {
   beginPath,
   beginText,
   beginZone,
-  ensureMinLineLength,
   resizeZoneFromCorner,
   resizeZoneFromDrag,
+  resizeZoneFromEdge,
+  simplifyPath,
   updateElement,
 } from '../engine/commands'
-import { hitTest, hitTestHandle, pointDist } from '../engine/hitTest'
+import { hitTest, hitTestHandle } from '../engine/hitTest'
 import type { LayerId, Point, Scene, Tool } from '../engine/types'
 import type { Viewport } from '../engine/viewport'
 import {
-  canvasToField,
   calculateViewport,
+  canvasToField,
   clampToFieldBounds,
 } from '../engine/viewport'
 
@@ -57,12 +58,8 @@ export function usePointerHandlers(args: {
       return calculateViewport(800, 600, 'full', 'horizontal')
     }
     const rect = wrap.getBoundingClientRect()
-    return calculateViewport(
-      rect.width,
-      rect.height,
-      scene.pitch.type === 'smallSided' ? 'quarter' : scene.pitch.type,
-      scene.pitch.orientation,
-    )
+    const fieldType = scene.pitch.type === 'free' ? 'full' : scene.pitch.type
+    return calculateViewport(rect.width, rect.height, fieldType, 'horizontal')
   }
 
   const screenToField = (
@@ -71,12 +68,12 @@ export function usePointerHandlers(args: {
   ): Point => {
     const r = wrap.getBoundingClientRect()
     const canvasPoint = { x: e.clientX - r.left, y: e.clientY - r.top }
-    const fieldType = scene.pitch.type === 'smallSided' ? 'quarter' : scene.pitch.type
+    const fieldType = scene.pitch.type === 'free' ? 'full' : scene.pitch.type
     const viewport = calculateViewport(
       r.width,
       r.height,
       fieldType,
-      scene.pitch.orientation,
+      'horizontal',
     )
     return canvasToField(canvasPoint, viewport, fieldType)
   }
@@ -95,28 +92,58 @@ export function usePointerHandlers(args: {
       setTool('select') // Auto-switch to select tool
 
       if (el.kind === 'arrow' || el.kind === 'line') {
-        setDrag({
-          id: handleHit.id,
-          start: p,
-          type: 'resizeLine',
-          handle: handleHit.handle,
-          baseScene: scene,
-        })
+        if (handleHit.handle === 'middle') {
+          // Move entire line
+          setDrag({
+            id: handleHit.id,
+            start: p,
+            origin: { x: el.from.x, y: el.from.y },
+            type: 'move',
+            baseScene: scene,
+          })
+        } else {
+          // Resize line endpoint
+          setDrag({
+            id: handleHit.id,
+            start: p,
+            type: 'resizeLine',
+            handle: handleHit.handle,
+            baseScene: scene,
+          })
+        }
         return
       }
 
       if (el.kind === 'path') {
-        setDrag({
-          id: handleHit.id,
-          start: p,
-          type: 'resizePath',
-          handle: handleHit.handle,
-          baseScene: scene,
-        })
+        if (handleHit.handle === 'middle') {
+          // Moving a middle point - need to find which point index
+          // For now, treat as moving entire path
+          setDrag({
+            id: handleHit.id,
+            start: p,
+            type: 'move',
+            baseScene: scene,
+          })
+        } else {
+          // Resizing endpoint
+          setDrag({
+            id: handleHit.id,
+            start: p,
+            type: 'resizePath',
+            handle: handleHit.handle,
+            baseScene: scene,
+          })
+        }
         return
       }
 
-      if (el.kind === 'zone' && (handleHit.handle === 'topLeft' || handleHit.handle === 'topRight' || handleHit.handle === 'bottomLeft' || handleHit.handle === 'bottomRight')) {
+      if (
+        el.kind === 'zone' &&
+        handleHit.handle !== 'from' &&
+        handleHit.handle !== 'to' &&
+        handleHit.handle !== 'corner' &&
+        handleHit.handle !== 'none'
+      ) {
         setDrag({
           id: handleHit.id,
           start: p,
@@ -190,11 +217,10 @@ export function usePointerHandlers(args: {
     // se layer locked, não cria
     if (scene.layers[activeLayer].locked) return
 
-    // Constrain point to field bounds
+    // Items use full field dimensions regardless of pitch type
+    // (items stay in same position, only pitch lines change)
     const viewport = getViewport()
-    const fieldType =
-      scene.pitch.type === 'smallSided' ? 'quarter' : scene.pitch.type
-    const constrainedP = clampToFieldBounds(p, viewport, fieldType)
+    const constrainedP = clampToFieldBounds(p, viewport, 'full')
 
     if (tool === 'player') {
       const res = addToken(scene, activeLayer, 'player', constrainedP)
@@ -297,8 +323,7 @@ export function usePointerHandlers(args: {
 
     if (drag.type === 'draw') {
       if (el.kind === 'arrow' || el.kind === 'line') {
-        const { from, to } = ensureMinLineLength(el.from, p)
-        replaceScene(updateElement(scene, el.id, { to } as any))
+        replaceScene(updateElement(scene, el.id, { to: p } as any))
         return
       }
       if (el.kind === 'zone') {
@@ -308,11 +333,29 @@ export function usePointerHandlers(args: {
         return
       }
       if (el.kind === 'path') {
-        const last = el.points[el.points.length - 1]
-        const dist = last ? Math.hypot(last.x - p.x, last.y - p.y) : 999
-        if (dist > 10) {
+        // If path has only 1 point, always add the second point
+        if (el.points.length === 1) {
           replaceScene(
             updateElement(scene, el.id, { points: [...el.points, p] } as any),
+          )
+          return
+        }
+
+        const last = el.points[el.points.length - 1]
+        const dist = last ? Math.hypot(last.x - p.x, last.y - p.y) : 999
+        // While drawing, add points very frequently for maximum smoothness
+        // Add point on every mouse move for ultra-smooth lines
+        if (dist > 0.5) {
+          // Add new point on every movement (extremely low threshold)
+          replaceScene(
+            updateElement(scene, el.id, { points: [...el.points, p] } as any),
+          )
+        } else {
+          // Update last point when barely moving for precision
+          const newPoints = [...el.points]
+          newPoints[newPoints.length - 1] = p
+          replaceScene(
+            updateElement(scene, el.id, { points: newPoints } as any),
           )
         }
         return
@@ -321,13 +364,14 @@ export function usePointerHandlers(args: {
     }
 
     // Handle resize for arrows/lines
-    if ((el.kind === 'arrow' || el.kind === 'line') && drag.type === 'resizeLine') {
+    if (
+      (el.kind === 'arrow' || el.kind === 'line') &&
+      drag.type === 'resizeLine'
+    ) {
       if (drag.handle === 'from') {
-        const { from, to } = ensureMinLineLength(p, el.to)
-        replaceScene(updateElement(scene, el.id, { from } as any))
+        replaceScene(updateElement(scene, el.id, { from: p } as any))
       } else if (drag.handle === 'to') {
-        const { from, to } = ensureMinLineLength(el.from, p)
-        replaceScene(updateElement(scene, el.id, { to } as any))
+        replaceScene(updateElement(scene, el.id, { to: p } as any))
       }
       return
     }
@@ -342,6 +386,23 @@ export function usePointerHandlers(args: {
         const newPoints = [...el.points]
         newPoints[newPoints.length - 1] = p
         replaceScene(updateElement(scene, el.id, { points: newPoints } as any))
+      } else if (drag.handle === 'middle') {
+        // Moving a middle point - find the closest point to update
+        const newPoints = [...el.points]
+        let closestIdx = 0
+        let minDist = Infinity
+        for (let i = 1; i < newPoints.length - 1; i++) {
+          const dist = Math.hypot(
+            newPoints[i].x - drag.start.x,
+            newPoints[i].y - drag.start.y,
+          )
+          if (dist < minDist) {
+            minDist = dist
+            closestIdx = i
+          }
+        }
+        newPoints[closestIdx] = p
+        replaceScene(updateElement(scene, el.id, { points: newPoints } as any))
       }
       return
     }
@@ -354,24 +415,43 @@ export function usePointerHandlers(args: {
         x: origin.x + dx,
         y: origin.y + dy,
       }
-      // Constrain to field bounds
+      // Items use full field dimensions regardless of pitch type
+      // (items stay in same position, only pitch lines change)
       const viewport = getViewport()
-      const fieldType =
-        scene.pitch.type === 'smallSided' ? 'quarter' : scene.pitch.type
-      const constrainedPos = clampToFieldBounds(newPos, viewport, fieldType)
+      const constrainedPos = clampToFieldBounds(newPos, viewport, 'full')
       replaceScene(updateElement(scene, el.id, constrainedPos as any))
       return
     }
 
     if (el.kind === 'zone') {
       if (drag.type === 'resizeZone' && drag.handle) {
-        // Resize from the specific corner
-        const resized = resizeZoneFromCorner(
-          { x: el.x, y: el.y, w: el.w, h: el.h },
-          drag.handle as "topLeft" | "topRight" | "bottomLeft" | "bottomRight",
-          p,
-        )
-        replaceScene(updateElement(scene, el.id, resized as any))
+        // Check if it's an edge handle or corner handle
+        if (
+          drag.handle === 'top' ||
+          drag.handle === 'bottom' ||
+          drag.handle === 'left' ||
+          drag.handle === 'right'
+        ) {
+          // Resize from edge (one-directional)
+          const resized = resizeZoneFromEdge(
+            { x: el.x, y: el.y, w: el.w, h: el.h },
+            drag.handle as 'top' | 'bottom' | 'left' | 'right',
+            p,
+          )
+          replaceScene(updateElement(scene, el.id, resized as any))
+        } else {
+          // Resize from corner
+          const resized = resizeZoneFromCorner(
+            { x: el.x, y: el.y, w: el.w, h: el.h },
+            drag.handle as
+              | 'topLeft'
+              | 'topRight'
+              | 'bottomLeft'
+              | 'bottomRight',
+            p,
+          )
+          replaceScene(updateElement(scene, el.id, resized as any))
+        }
       } else if (drag.type === 'draw') {
         // Drawing a new zone
         const resized = resizeZoneFromDrag(drag.start, p)
@@ -395,10 +475,18 @@ export function usePointerHandlers(args: {
       const origin = drag.origin!
       const dx = p.x - drag.start.x
       const dy = p.y - drag.start.y
+      const newPos = {
+        x: origin.x + dx,
+        y: origin.y + dy,
+      }
+      // Items use full field dimensions regardless of pitch type
+      // (items stay in same position, only pitch lines change)
+      const viewport = getViewport()
+      const constrainedPos = clampToFieldBounds(newPos, viewport, 'full')
       replaceScene(
         updateElement(scene, el.id, {
-          x: origin.x + dx,
-          y: origin.y + dy,
+          x: constrainedPos.x,
+          y: constrainedPos.y,
         } as any),
       )
       return
@@ -431,7 +519,22 @@ export function usePointerHandlers(args: {
   }
 
   const onPointerUp = () => () => {
-    if (drag?.baseScene) commitFrom(drag.baseScene)
+    if (drag?.baseScene) {
+      // Simplify path when finishing drawing (less aggressive to preserve smoothness)
+      if (drag.type === 'draw' && drag.drawKind === 'path') {
+        const el = scene.elements.find((x) => x.id === drag.id)
+        if (el && el.kind === 'path' && el.points.length > 2) {
+          // Use lower minDistance to preserve more points for smoother paths
+          const simplified = simplifyPath(el.points, 8)
+          if (simplified.length < el.points.length) {
+            replaceScene(
+              updateElement(scene, el.id, { points: simplified } as any),
+            )
+          }
+        }
+      }
+      commitFrom(drag.baseScene)
+    }
     setDrag(undefined)
   }
   return { onPointerDown, onPointerMove, onPointerUp }

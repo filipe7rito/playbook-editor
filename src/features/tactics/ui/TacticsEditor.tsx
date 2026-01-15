@@ -2,7 +2,13 @@
 
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
-import { useMemo, useRef } from 'react'
+import {
+  DrawerProvider,
+  DrawerContent,
+  DrawerTrigger,
+  DrawerClose,
+} from '@/components/ui/drawer'
+import { useMemo, useRef, useState, useEffect } from 'react'
 import { useCanvasRenderer } from '../editor/useCanvasRenderer'
 import { useEditorState } from '../editor/useEditorState'
 import { usePointerHandlers } from '../editor/usePointerHandlers'
@@ -11,12 +17,38 @@ import { deepClone, downloadDataUrl, downloadText } from '../engine/utils'
 import { Inspector } from './Inspector'
 import { Library } from './Library'
 import { Toolbar } from './Toolbar'
+import { SaveDialog } from './SaveDialog'
+import { Menu, X, ArrowLeft } from 'lucide-react'
+import { Link, useNavigate, useParams } from '@tanstack/react-router'
 
 export function TacticsEditor() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const wrapRef = useRef<HTMLDivElement | null>(null)
+  const [drawerOpen, setDrawerOpen] = useState(false)
+  const navigate = useNavigate()
+  const params = useParams({ strict: false })
+  const editingId = (params as any).id || null
 
   const editor = useEditorState()
+
+  // Load scene if editing an existing item (only once when editingId changes)
+  const hasLoadedRef = useRef<string | null>(null)
+  useEffect(() => {
+    if (editingId && hasLoadedRef.current !== editingId) {
+      hasLoadedRef.current = editingId
+      import('../engine/storage').then(({ getSavedItems }) => {
+        const items = getSavedItems()
+        const item = items.find((i: any) => i.id === editingId)
+        if (item) {
+          editor.applyScene(deepClone(item.scene))
+          editor.setSelectedId(undefined)
+        }
+      })
+    } else if (!editingId) {
+      hasLoadedRef.current = null
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [editingId]) // Only depend on editingId, not editor
 
   useCanvasRenderer({
     canvasRef,
@@ -125,13 +157,20 @@ export function TacticsEditor() {
             <Button variant="secondary" onClick={exportPng}>
               Export PNG
             </Button>
+            <SaveDialog scene={editor.scene} editingId={editingId} onSave={() => navigate({ to: '/' })} />
+            <Link to="/">
+              <Button variant="secondary">
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                Voltar
+              </Button>
+            </Link>
           </div>
         </div>
 
         {/* Content */}
-        <div className="grid flex-1 min-h-0 grid-cols-1 gap-3 md:grid-cols-[1fr_360px]">
+        <div className="relative flex flex-1 min-h-0 gap-3">
           {/* Center */}
-          <div className="relative min-h-0 overflow-hidden rounded-2xl border">
+          <div className="relative flex-1 min-h-0 overflow-hidden rounded-2xl border">
             <div ref={wrapRef} className="relative h-full min-h-0 w-full">
               <canvas
                 ref={canvasRef}
@@ -145,8 +184,8 @@ export function TacticsEditor() {
             </div>
           </div>
 
-          {/* Right */}
-          <div className="min-h-0 rounded-2xl border p-3">
+          {/* Right Panel - Desktop */}
+          <div className="hidden md:block min-h-0 w-[360px] rounded-2xl border p-3">
             <Tabs
               value={editor.panel}
               onValueChange={(v) => editor.setPanel(v as any)}
@@ -179,6 +218,75 @@ export function TacticsEditor() {
               </TabsContent>
             </Tabs>
           </div>
+
+          {/* Mobile Drawer Button */}
+          <DrawerProvider open={drawerOpen} onOpenChange={setDrawerOpen}>
+            <div className="md:hidden fixed bottom-20 right-4 z-30">
+              <DrawerTrigger asChild>
+                <Button
+                  size="icon"
+                  className="rounded-full shadow-lg"
+                  aria-label="Abrir painel"
+                >
+                  <Menu className="h-5 w-5" />
+                </Button>
+              </DrawerTrigger>
+            </div>
+
+            {/* Mobile Drawer */}
+            <DrawerContent side="right" className="md:hidden">
+              <div className="flex h-full flex-col p-4">
+                <div className="mb-4 flex items-center justify-between">
+                  <h2 className="text-lg font-semibold">Painel</h2>
+                  <DrawerClose asChild>
+                    <Button variant="ghost" size="icon" aria-label="Fechar">
+                      <X className="h-5 w-5" />
+                    </Button>
+                  </DrawerClose>
+                </div>
+
+                <Tabs
+                  value={editor.panel}
+                  onValueChange={(v) => editor.setPanel(v as any)}
+                  className="flex-1 flex flex-col min-h-0"
+                >
+                  <TabsList className="grid w-full grid-cols-2">
+                    <TabsTrigger value="inspector">Inspector</TabsTrigger>
+                    <TabsTrigger value="library">Biblioteca</TabsTrigger>
+                  </TabsList>
+
+                  <TabsContent
+                    value="inspector"
+                    className="mt-3 flex-1 overflow-y-auto"
+                  >
+                    <Inspector
+                      scene={editor.scene}
+                      selected={editor.selected}
+                      applyScene={editor.applyScene}
+                      clearSelection={() => editor.setSelectedId(undefined)}
+                    />
+                  </TabsContent>
+
+                  <TabsContent
+                    value="library"
+                    className="mt-3 flex-1 overflow-y-auto"
+                  >
+                    <Library
+                      query={editor.query}
+                      setQuery={editor.setQuery}
+                      drills={editor.filteredDrills}
+                      onLoad={(d) => {
+                        editor.applyScene(deepClone(d.sceneSnapshot))
+                        editor.setSelectedId(undefined)
+                        editor.setPanel('inspector')
+                        setDrawerOpen(false)
+                      }}
+                    />
+                  </TabsContent>
+                </Tabs>
+              </div>
+            </DrawerContent>
+          </DrawerProvider>
         </div>
 
         {/* Bottom Toolbar */}

@@ -3,22 +3,61 @@ import type { Viewport } from '../engine/viewport'
 import { fieldToCanvas } from '../engine/viewport'
 import { drawPitch } from './drawPitch'
 
+// Element scaling constraints
+// Elements should scale with the pitch but stay within reasonable bounds
+// These values clamp the element scale to prevent elements from becoming too large or too small
+const MIN_ELEMENT_SCALE = 0.3 // Minimum scale multiplier (30% of base)
+const MAX_ELEMENT_SCALE = 1.2 // Maximum scale multiplier (120% of base)
+const BASE_CANVAS_WIDTH = 1440 // Reference canvas width for normalization
+
+/**
+ * Get clamped element scale that prevents elements from becoming too large or too small
+ * Elements scale proportionally with the pitch: smaller screens = smaller elements
+ */
+function getElementScale(viewport: Viewport): number {
+  // Calculate what the scale would be at the base canvas width
+  // The viewport.scale is proportional to canvas size, so we normalize it
+  // by comparing to what it would be at BASE_CANVAS_WIDTH
+  // Smaller screens have smaller viewport.scale, so elements scale down appropriately
+
+  // Estimate base scale: at 1440px width, with typical field dimensions
+  // greenWidth ≈ 1440 * 0.97 = ~1397px, field width = 105m
+  // base scale ≈ 1397 / 105 ≈ 13.3
+  // But we want to normalize so elements scale proportionally with viewport
+  // So we use: viewport.scale * (viewport.canvasWidth / BASE_CANVAS_WIDTH)
+  // This makes elements smaller on smaller screens and larger on larger screens
+
+  const normalizedScale =
+    viewport.scale * (viewport.canvasWidth / BASE_CANVAS_WIDTH)
+  return Math.max(
+    MIN_ELEMENT_SCALE,
+    Math.min(MAX_ELEMENT_SCALE, normalizedScale),
+  )
+}
+
 function drawText(
   ctx: CanvasRenderingContext2D,
   x: number,
   y: number,
   text: string,
+  scale: number = 1,
 ) {
-  ctx.font = '600 14px ui-sans-serif, system-ui'
+  const fontSize = 14 * scale
+  ctx.font = `600 ${fontSize}px ui-sans-serif, system-ui`
   ctx.fillStyle = 'rgba(255,255,255,0.95)'
   ctx.strokeStyle = 'rgba(0,0,0,0.35)'
-  ctx.lineWidth = 4
+  ctx.lineWidth = 4 * scale
   ctx.strokeText(text, x, y)
   ctx.fillText(text, x, y)
 }
 
-function drawArrow(ctx: CanvasRenderingContext2D, from: Point, to: Point) {
-  const headLen = 14
+function drawArrow(
+  ctx: CanvasRenderingContext2D,
+  from: Point,
+  to: Point,
+  scale: number = 1,
+) {
+  const headLen = 14 * scale
   const angle = Math.atan2(to.y - from.y, to.x - from.x)
   ctx.beginPath()
   ctx.moveTo(from.x, from.y)
@@ -48,8 +87,10 @@ export function renderScene(
 ) {
   drawPitch(ctx, viewport, scene)
 
-  const fieldType =
-    scene.pitch.type === 'smallSided' ? 'quarter' : scene.pitch.type
+  // For rendering, use 'full' for 'free' type (same coordinate system)
+  const fieldType = scene.pitch.type === 'free' ? 'full' : scene.pitch.type
+  // Get clamped element scale to prevent elements from becoming too large or too small
+  const elementScale = getElementScale(viewport)
   const layerOrder: LayerId[] = ['base', 'drills', 'tactics']
   for (const layerId of layerOrder) {
     const layer = scene.layers[layerId]
@@ -66,9 +107,8 @@ export function renderScene(
 
       if (el.kind === 'token') {
         const pos = fieldToCanvas({ x: el.x, y: el.y }, viewport, fieldType)
-        // Use fixed pixel size - original sizes were in pixels, not scaled
-        // Keep original sizes but they represent pixels, not field units
-        const radius = el.r
+        // Scale token size with clamped element scale
+        const radius = el.r * elementScale
 
         const fill =
           el.tokenType === 'cone'
@@ -81,14 +121,15 @@ export function renderScene(
 
         ctx.fillStyle = fill
         ctx.strokeStyle = 'rgba(0,0,0,0.35)'
-        ctx.lineWidth = isSel ? 4 : 3
+        ctx.lineWidth = (isSel ? 4 : 3) * elementScale
         ctx.beginPath()
         ctx.arc(pos.x, pos.y, radius, 0, Math.PI * 2)
         ctx.fill()
         ctx.stroke()
 
         if (typeof el.number === 'number') {
-          ctx.font = '700 14px ui-sans-serif, system-ui'
+          const fontSize = 14 * elementScale
+          ctx.font = `700 ${fontSize}px ui-sans-serif, system-ui`
           ctx.fillStyle = 'rgba(0,0,0,0.8)'
           ctx.textAlign = 'center'
           ctx.textBaseline = 'middle'
@@ -97,14 +138,22 @@ export function renderScene(
           ctx.textBaseline = 'alphabetic'
         }
 
-        if (el.label)
-          drawText(ctx, pos.x + radius + 6, pos.y - radius - 6, el.label)
+        if (el.label) {
+          const labelOffset = 6 * elementScale
+          drawText(
+            ctx,
+            pos.x + radius + labelOffset,
+            pos.y - radius - labelOffset,
+            el.label,
+            elementScale,
+          )
+        }
 
         if (isHover && !isSel) {
           ctx.strokeStyle = 'rgba(255,255,255,0.85)'
-          ctx.lineWidth = 2
+          ctx.lineWidth = 2 * elementScale
           ctx.beginPath()
-          ctx.arc(pos.x, pos.y, radius + 6, 0, Math.PI * 2)
+          ctx.arc(pos.x, pos.y, radius + 6 * elementScale, 0, Math.PI * 2)
           ctx.stroke()
         }
       }
@@ -124,15 +173,28 @@ export function renderScene(
         ctx.fillRect(pos.x, pos.y, size.w, size.h)
         ctx.globalAlpha = el.locked ? 0.65 : 1
         ctx.strokeStyle = 'rgba(255,255,255,0.7)'
-        ctx.setLineDash([8, 6])
+        ctx.setLineDash([8 * elementScale, 6 * elementScale])
         ctx.strokeRect(pos.x, pos.y, size.w, size.h)
         ctx.setLineDash([])
-        if (el.label) drawText(ctx, pos.x + 8, pos.y + 20, el.label)
+        if (el.label)
+          drawText(
+            ctx,
+            pos.x + 8 * elementScale,
+            pos.y + 20 * elementScale,
+            el.label,
+            elementScale,
+          )
 
         if (isHover && !isSel) {
           ctx.strokeStyle = 'rgba(255,255,255,0.85)'
-          ctx.lineWidth = 2
-          ctx.strokeRect(pos.x - 2, pos.y - 2, size.w + 4, size.h + 4)
+          ctx.lineWidth = 2 * elementScale
+          const hoverPadding = 2 * elementScale
+          ctx.strokeRect(
+            pos.x - hoverPadding,
+            pos.y - hoverPadding,
+            size.w + hoverPadding * 2,
+            size.h + hoverPadding * 2,
+          )
         }
       }
 
@@ -140,8 +202,8 @@ export function renderScene(
         const from = fieldToCanvas(el.from, viewport, fieldType)
         const to = fieldToCanvas(el.to, viewport, fieldType)
         ctx.strokeStyle = 'rgba(255,255,255,0.92)'
-        ctx.lineWidth = isSel ? 4 : 3
-        if (el.dashed) ctx.setLineDash([10, 8])
+        ctx.lineWidth = (isSel ? 4 : 3) * elementScale
+        if (el.dashed) ctx.setLineDash([10 * elementScale, 8 * elementScale])
         ctx.beginPath()
         ctx.moveTo(from.x, from.y)
         ctx.lineTo(to.x, to.y)
@@ -154,16 +216,17 @@ export function renderScene(
         const to = fieldToCanvas(el.to, viewport, fieldType)
         ctx.strokeStyle = 'rgba(255,255,255,0.92)'
         ctx.fillStyle = 'rgba(255,255,255,0.92)'
-        ctx.lineWidth = isSel ? 4 : 3
-        if (el.dashed) ctx.setLineDash([10, 8])
-        drawArrow(ctx, from, to)
+        ctx.lineWidth = (isSel ? 4 : 3) * elementScale
+        if (el.dashed) ctx.setLineDash([10 * elementScale, 8 * elementScale])
+        drawArrow(ctx, from, to, elementScale)
         ctx.setLineDash([])
         if (el.label)
           drawText(
             ctx,
-            (from.x + to.x) / 2 + 8,
-            (from.y + to.y) / 2 - 8,
+            (from.x + to.x) / 2 + 8 * elementScale,
+            (from.y + to.y) / 2 - 8 * elementScale,
             el.label,
+            elementScale,
           )
       }
 
@@ -173,24 +236,47 @@ export function renderScene(
             fieldToCanvas(p, viewport, fieldType),
           )
           ctx.strokeStyle = 'rgba(255,255,255,0.92)'
-          ctx.lineWidth = isSel ? 4 : 3
-          if (el.dashed) ctx.setLineDash([10, 8])
+          ctx.lineWidth = (isSel ? 4 : 3) * elementScale
+          ctx.lineCap = 'round'
+          ctx.lineJoin = 'round'
+          if (el.dashed) ctx.setLineDash([10 * elementScale, 8 * elementScale])
+
           ctx.beginPath()
           ctx.moveTo(canvasPoints[0].x, canvasPoints[0].y)
-          for (let i = 1; i < canvasPoints.length; i++)
-            ctx.lineTo(canvasPoints[i].x, canvasPoints[i].y)
+
+          // Draw smooth curves connecting all points
+          // With many points, we can draw smooth curves through them
+          if (canvasPoints.length === 2) {
+            // For 2 points, draw a simple line
+            ctx.lineTo(canvasPoints[1].x, canvasPoints[1].y)
+          } else {
+            // For 3+ points, draw ultra-smooth curves
+            // With many points created consistently, use simple lines for maximum smoothness
+            for (let i = 0; i < canvasPoints.length - 1; i++) {
+              const p1 = canvasPoints[i + 1]
+              // With many close points, simple lines create perfectly smooth curves
+              ctx.lineTo(p1.x, p1.y)
+            }
+          }
+
           ctx.stroke()
           ctx.setLineDash([])
           if (el.label) {
             const mid = canvasPoints[Math.floor(canvasPoints.length / 2)]
-            drawText(ctx, mid.x + 8, mid.y - 8, el.label)
+            drawText(
+              ctx,
+              mid.x + 8 * elementScale,
+              mid.y - 8 * elementScale,
+              el.label,
+              elementScale,
+            )
           }
         }
       }
 
       if (el.kind === 'text') {
         const pos = fieldToCanvas({ x: el.x, y: el.y }, viewport, fieldType)
-        drawText(ctx, pos.x, pos.y, el.text)
+        drawText(ctx, pos.x, pos.y, el.text, elementScale)
       }
 
       ctx.restore()
@@ -223,16 +309,17 @@ export function renderScene(
 
       if (sel.kind === 'token') {
         const pos = fieldToCanvas({ x: sel.x, y: sel.y }, viewport, fieldType)
-        // Use fixed pixel size, not scaled
-        const radius = sel.r
+        // Scale token size with clamped element scale
+        const radius = sel.r * elementScale
+        const selectionPadding = 10 * elementScale
         ctx.beginPath()
-        ctx.arc(pos.x, pos.y, radius + 10, 0, Math.PI * 2)
+        ctx.arc(pos.x, pos.y, radius + selectionPadding, 0, Math.PI * 2)
         ctx.stroke()
-        handle(pos.x + radius + 10, pos.y)
+        handle(pos.x + radius + selectionPadding, pos.y)
       } else if (sel.kind === 'zone') {
         const pos = fieldToCanvas({ x: sel.x, y: sel.y }, viewport, fieldType)
         const size = { w: sel.w * viewport.scale, h: sel.h * viewport.scale }
-        const pad = 6
+        const pad = 6 * elementScale
 
         // Selection background (subtle overlay)
         ctx.fillStyle = 'rgba(255, 255, 255, 0.08)'
@@ -245,8 +332,8 @@ export function renderScene(
 
         // Selection border (cleaner, more visible)
         ctx.strokeStyle = 'rgba(255, 255, 255, 0.95)'
-        ctx.lineWidth = 2
-        ctx.setLineDash([8, 4])
+        ctx.lineWidth = 2 * elementScale
+        ctx.setLineDash([8 * elementScale, 4 * elementScale])
         ctx.strokeRect(
           pos.x - pad,
           pos.y - pad,
@@ -255,23 +342,80 @@ export function renderScene(
         )
         ctx.setLineDash([])
 
-        // Corner handles (larger and more visible)
+        // Corner handles
         handle(pos.x, pos.y)
         handle(pos.x + size.w, pos.y)
         handle(pos.x, pos.y + size.h)
         handle(pos.x + size.w, pos.y + size.h)
+
+        // Edge handles for one-directional resize (circular, softer handles)
+        const edgeHandle = (x: number, y: number) => {
+          ctx.setLineDash([])
+          ctx.fillStyle = 'rgba(255, 255, 255, 1)'
+          ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)'
+          ctx.lineWidth = 2 * elementScale
+          const radius = 5 * elementScale
+          ctx.beginPath()
+          ctx.arc(x, y, radius, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.stroke()
+          // Inner dot for better visibility
+          ctx.fillStyle = 'rgba(59, 130, 246, 0.8)'
+          ctx.beginPath()
+          ctx.arc(x, y, 2.5 * elementScale, 0, Math.PI * 2)
+          ctx.fill()
+          ctx.setLineDash([6 * elementScale, 6 * elementScale])
+        }
+
+        edgeHandle(pos.x + size.w / 2, pos.y) // top
+        edgeHandle(pos.x + size.w / 2, pos.y + size.h) // bottom
+        edgeHandle(pos.x, pos.y + size.h / 2) // left
+        edgeHandle(pos.x + size.w, pos.y + size.h / 2) // right
       } else if (sel.kind === 'text') {
         const pos = fieldToCanvas({ x: sel.x, y: sel.y }, viewport, fieldType)
-        ctx.strokeRect(pos.x - 6, pos.y - 18, 240, 26)
-        handle(pos.x - 6, pos.y - 18)
-        handle(pos.x + 240, pos.y + 8)
+        const textWidth = 240 * elementScale
+        const textHeight = 26 * elementScale
+        const textPadding = 6 * elementScale
+        ctx.strokeRect(
+          pos.x - textPadding,
+          pos.y - 18 * elementScale,
+          textWidth,
+          textHeight,
+        )
+        handle(pos.x - textPadding, pos.y - 18 * elementScale)
+        handle(pos.x + textWidth, pos.y + 8 * elementScale)
       } else if (sel.kind === 'arrow' || sel.kind === 'line') {
         const from = fieldToCanvas(sel.from, viewport, fieldType)
         const to = fieldToCanvas(sel.to, viewport, fieldType)
+        const mid = fieldToCanvas(
+          { x: (sel.from.x + sel.to.x) / 2, y: (sel.from.y + sel.to.y) / 2 },
+          viewport,
+          fieldType,
+        )
+
+        // Endpoint handles
         handle(from.x, from.y)
         handle(to.x, to.y)
+
+        // Middle handle for moving entire line (circular, softer handle)
+        ctx.setLineDash([])
+        ctx.fillStyle = 'rgba(255, 255, 255, 1)'
+        ctx.strokeStyle = 'rgba(59, 130, 246, 0.9)'
+        ctx.lineWidth = 2 * elementScale
+        const radius = 5 * elementScale
+        ctx.beginPath()
+        ctx.arc(mid.x, mid.y, radius, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.stroke()
+        // Inner dot for better visibility
+        ctx.fillStyle = 'rgba(59, 130, 246, 0.8)'
+        ctx.beginPath()
+        ctx.arc(mid.x, mid.y, 2.5 * elementScale, 0, Math.PI * 2)
+        ctx.fill()
+        ctx.setLineDash([6 * elementScale, 6 * elementScale])
       } else if (sel.kind === 'path') {
         if (sel.points.length) {
+          // Show only first and last points for cleaner editing
           const first = fieldToCanvas(sel.points[0], viewport, fieldType)
           const last = fieldToCanvas(
             sel.points[sel.points.length - 1],
@@ -280,6 +424,24 @@ export function renderScene(
           )
           handle(first.x, first.y)
           handle(last.x, last.y)
+
+          // Optionally show middle points if there are only a few
+          if (sel.points.length <= 4) {
+            for (let i = 1; i < sel.points.length - 1; i++) {
+              const point = fieldToCanvas(sel.points[i], viewport, fieldType)
+              // Smaller handles for middle points
+              ctx.setLineDash([])
+              ctx.fillStyle = 'rgba(255, 255, 255, 0.8)'
+              ctx.strokeStyle = 'rgba(59, 130, 246, 0.7)'
+              ctx.lineWidth = 2 * elementScale
+              const radius = 4 * elementScale
+              ctx.beginPath()
+              ctx.arc(point.x, point.y, radius, 0, Math.PI * 2)
+              ctx.fill()
+              ctx.stroke()
+              ctx.setLineDash([6 * elementScale, 6 * elementScale])
+            }
+          }
         }
       }
 

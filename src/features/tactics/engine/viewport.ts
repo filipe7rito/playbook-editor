@@ -116,10 +116,12 @@ export function calculateViewport(
       scale,
     }
   } else {
-    // Half/Quarter: vertical, fits within the same green area
-    // Field is rotated 90 degrees, so we swap width/height for scaling
-    const scaleX = greenHeight / fieldDims.width // green height for field width
-    const scaleY = greenWidth / fieldDims.height // green width for field height
+    // Half field: items stay in same position, use full field scale
+    // The pitch lines are drawn differently, but coordinate system stays the same
+    // Use full field dimensions for scale calculation
+    const fullFieldDims = getFieldDimensions('full')
+    const scaleX = greenWidth / fullFieldDims.width
+    const scaleY = greenHeight / fullFieldDims.height
     const scale = Math.min(scaleX, scaleY)
     return {
       canvasWidth,
@@ -140,32 +142,14 @@ export function calculateViewport(
 export function canvasToField(
   point: Point,
   viewport: Viewport,
-  fieldType: 'full' | 'half' | 'quarter' = 'full',
+  _fieldType: 'full' | 'half' | 'quarter' | 'free' = 'full',
 ): Point {
-  if (fieldType === 'full') {
-    // Full field: horizontal, direct conversion
-    const x = (point.x - viewport.greenX) / viewport.scale
-    const y = (point.y - viewport.greenY) / viewport.scale
-    return { x, y }
-  } else {
-    // Half/Quarter: vertical, need to rotate coordinates
-    const centerX = viewport.greenX + viewport.greenWidth / 2
-    const centerY = viewport.greenY + viewport.greenHeight / 2
-
-    // Translate to center
-    const dx = point.x - centerX
-    const dy = point.y - centerY
-
-    // Rotate -90 degrees (counter-clockwise to match canvas rotation)
-    const rotatedX = dy
-    const rotatedY = -dx
-
-    // Convert to field coordinates
-    const x = rotatedX / viewport.scale
-    const y = rotatedY / viewport.scale
-
-    return { x, y }
-  }
+  // For half field, items stay in same position - use full field coordinates
+  // Only the pitch lines change, not the coordinate system
+  // Full field: horizontal, direct conversion
+  const x = (point.x - viewport.greenX) / viewport.scale
+  const y = (point.y - viewport.greenY) / viewport.scale
+  return { x, y }
 }
 
 /**
@@ -175,32 +159,14 @@ export function canvasToField(
 export function fieldToCanvas(
   point: Point,
   viewport: Viewport,
-  fieldType: 'full' | 'half' | 'quarter' = 'full',
+  _fieldType: 'full' | 'half' | 'quarter' | 'free' = 'full',
 ): Point {
-  if (fieldType === 'full') {
-    // Full field: horizontal, direct conversion
-    const x = point.x * viewport.scale + viewport.greenX
-    const y = point.y * viewport.scale + viewport.greenY
-    return { x, y }
-  } else {
-    // Half/Quarter: vertical, need to rotate coordinates
-    // First convert to canvas space (rotated)
-    const rotatedX = point.x * viewport.scale
-    const rotatedY = point.y * viewport.scale
-
-    // Rotate 90 degrees (clockwise to match canvas rotation)
-    const dx = -rotatedY
-    const dy = rotatedX
-
-    // Translate from center
-    const centerX = viewport.greenX + viewport.greenWidth / 2
-    const centerY = viewport.greenY + viewport.greenHeight / 2
-
-    const x = centerX + dx
-    const y = centerY + dy
-
-    return { x, y }
-  }
+  // For half field, items stay in same position - use full field coordinates
+  // Only the pitch lines change, not the coordinate system
+  // Full field: horizontal, direct conversion
+  const x = point.x * viewport.scale + viewport.greenX
+  const y = point.y * viewport.scale + viewport.greenY
+  return { x, y }
 }
 
 /**
@@ -229,9 +195,11 @@ export function getFieldDimensions(fieldType: 'full' | 'half' | 'quarter') {
 export function clampToFieldBounds(
   point: Point,
   _viewport: Viewport,
-  fieldType: 'full' | 'half' | 'quarter',
+  fieldType: 'full' | 'half' | 'quarter' | 'free',
 ): Point {
-  const fieldDims = getFieldDimensions(fieldType)
+  // For 'free' type, use full field dimensions
+  const actualFieldType = fieldType === 'free' ? 'full' : fieldType
+  const fieldDims = getFieldDimensions(actualFieldType)
   return {
     x: Math.max(0, Math.min(fieldDims.width, point.x)),
     y: Math.max(0, Math.min(fieldDims.height, point.y)),
